@@ -1679,6 +1679,7 @@ class ClientImpl extends TcpDiscoveryImpl {
          * @param msg Message.
          */
         private void processNodeAddedMessage(TcpDiscoveryNodeAddedMessage msg) {
+            System.out.println("MY processNodeAddedMessage");
             if (spi.getSpiContext().isStopping())
                 return;
 
@@ -1750,13 +1751,9 @@ class ClientImpl extends TcpDiscoveryImpl {
 
             if (getLocalNodeId().equals(msg.nodeId())) {
                 if (joining()) {
-                    Map<UUID, Map<Integer, byte[]>> dataMap = msg.clientDiscoData();
+                    System.out.println("MY processNodeAddFinishedMessage joining");
 
-                    if (dataMap != null) {
-                        for (Map.Entry<UUID, Map<Integer, byte[]>> entry : dataMap.entrySet())
-                            spi.onExchange(getLocalNodeId(), entry.getKey(), entry.getValue(),
-                                U.resolveClassLoader(spi.ignite().configuration()));
-                    }
+
 
                     locNode.setAttributes(msg.clientNodeAttributes());
                     locNode.visible(true);
@@ -1777,7 +1774,7 @@ class ClientImpl extends TcpDiscoveryImpl {
                     boolean disconnected = disconnected();
 
                     state = CONNECTED;
-
+                    System.out.println("MY processNodeAddFinishedMessage CONNECTED");
                     if (disconnected) {
                         notifyDiscovery(EVT_CLIENT_NODE_RECONNECTED, topVer, locNode, nodes);
 
@@ -1791,8 +1788,16 @@ class ClientImpl extends TcpDiscoveryImpl {
                         spi.stats.onJoinFinished();
 
                     joinErr.set(null);
-
+                    System.out.println("MY processNodeAddFinishedMessage joinLatch countDown");
                     joinLatch.countDown();
+
+                    Map<UUID, Map<Integer, byte[]>> dataMap = msg.clientDiscoData();
+
+                    if (dataMap != null) {
+                        for (Map.Entry<UUID, Map<Integer, byte[]>> entry : dataMap.entrySet())
+                            spi.onExchange(getLocalNodeId(), entry.getKey(), entry.getValue(),
+                                U.resolveClassLoader(spi.ignite().configuration()));
+                    }
                 }
                 else if (log.isDebugEnabled())
                     log.debug("Discarding node add finished message (this message has already been processed) " +
@@ -2048,6 +2053,7 @@ class ClientImpl extends TcpDiscoveryImpl {
          * @param msg Message.
          */
         private void processCustomMessage(TcpDiscoveryCustomEventMessage msg) {
+            System.out.println("MY processCustomMessage msg="+msg);
             if (state == CONNECTED) {
                 DiscoverySpiListener lsnr = spi.lsnr;
 

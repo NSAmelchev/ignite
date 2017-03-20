@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.internal.managers.discovery.DiscoveryCustomMessage;
+import org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryHandlerV2;
 import org.apache.ignite.internal.util.typedef.internal.S;
 
 /**
@@ -52,7 +53,10 @@ public class StartRoutineDiscoveryMessage extends AbstractContinuousMessage {
      */
     public StartRoutineDiscoveryMessage(UUID routineId, StartRequestData startReqData, boolean keepBinary) {
         super(routineId);
-
+        if (startReqData.handler() instanceof CacheContinuousQueryHandlerV2){
+            System.out.println("MY StartRoutineDiscoveryMessage my_field="
+                +((CacheContinuousQueryHandlerV2)startReqData.handler()).my_field);
+        }
         this.startReqData = startReqData;
         this.keepBinary = keepBinary;
     }

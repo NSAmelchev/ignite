@@ -61,6 +61,7 @@ import org.apache.ignite.internal.processors.cache.GridCacheAdapter;
 import org.apache.ignite.internal.processors.cache.GridCacheContext;
 import org.apache.ignite.internal.processors.cache.GridCacheProcessor;
 import org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryHandler;
+import org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryHandlerV2;
 import org.apache.ignite.internal.processors.timeout.GridTimeoutObject;
 import org.apache.ignite.internal.util.future.GridFinishedFuture;
 import org.apache.ignite.internal.util.future.GridFutureAdapter;
@@ -422,8 +423,51 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
             for (Map.Entry<UUID, Map<UUID, LocalRoutineInfo>> e : clientInfos.entrySet()) {
                 Map<UUID, LocalRoutineInfo> cp = U.newHashMap(e.getValue().size());
 
-                for (Map.Entry<UUID, LocalRoutineInfo> e0 : e.getValue().entrySet())
+                for (Map.Entry<UUID, LocalRoutineInfo> e0 : e.getValue().entrySet()) {
+                    if (e0.getValue().hnd instanceof CacheContinuousQueryHandlerV2){
+                        //hnd.p2pUnmarshal(nodeId, ctx);
+                        System.out.println("MY пытаемся положить в пакет то что надо1. my_field="
+                            +((CacheContinuousQueryHandlerV2)e0.getValue().hnd).my_field);
+                        LocalRoutineInfo info = e0.getValue();
+                        StartRequestData reqData = new StartRequestData(info.prjPred, info.hnd, info.bufSize, info.interval, info.autoUnsubscribe);
+                        try {
+                            if (ctx.config().isPeerClassLoadingEnabled()) {
+                                // Handle peer deployment for projection predicate.
+                                if (info.prjPred != null && !U.isGrid(info.prjPred.getClass())) {
+                                    Class cls = U.detectClass(info.prjPred);
+
+                                    String clsName = cls.getName();
+                                    System.out.println("MY clsName=" + clsName);
+                                    GridDeployment dep = ctx.deploy().deploy(cls, U.detectClassLoader(cls));
+
+                                    if (dep == null)
+                                        throw new IgniteDeploymentCheckedException("Failed to deploy projection predicate: " + info.prjPred);
+
+                                    reqData.className(clsName);
+                                    reqData.deploymentInfo(new GridDeploymentInfoBean(dep));
+
+                                    reqData.p2pMarshal(marsh);
+                                }
+
+                                // Handle peer deployment for other handler-specific objects.
+                                reqData.handler().p2pMarshal(ctx);
+                            }
+                        }
+                        catch (IgniteCheckedException e1) {
+
+                        }
+                        info.reqData = reqData;
+                        /*ctx.continuous().
+                        startRoutine(e0.getValue().hnd, false, 1, 0, true, e0.getValue().prjPred);*/
+                        /*
+
+                        ctx.discovery().sendCustomEvent(new StartRoutineDiscoveryMessage(routineId, reqData,
+                            reqData.handler().keepBinary()));*/
+
+                        cp.put(e0.getKey(), info);
+                    } else
                     cp.put(e0.getKey(), e0.getValue());
+                }
 
                 clientInfos0.put(e.getKey(), cp);
             }
@@ -431,8 +475,15 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
             if (nodeId.equals(ctx.localNodeId()) && ctx.discovery().localNode().isClient()) {
                 Map<UUID, LocalRoutineInfo> infos = new HashMap<>();
 
-                for (Map.Entry<UUID, LocalRoutineInfo> e : locInfos.entrySet())
+                for (Map.Entry<UUID, LocalRoutineInfo> e : locInfos.entrySet()){
+                    if (e.getValue().hnd instanceof CacheContinuousQueryHandlerV2){
+                        //hnd.p2pUnmarshal(nodeId, ctx);
+                        System.out.println("MY пытаемся положить в пакет то что надо2. my_field="
+                            +((CacheContinuousQueryHandlerV2)e.getValue().hnd).my_field);
+                    }
                     infos.put(e.getKey(), e.getValue());
+                }
+
 
                 clientInfos0.put(ctx.localNodeId(), infos);
             }
@@ -443,6 +494,12 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
             for (Map.Entry<UUID, LocalRoutineInfo> e : locInfos.entrySet()) {
                 UUID routineId = e.getKey();
                 LocalRoutineInfo info = e.getValue();
+
+                if (info.hnd instanceof CacheContinuousQueryHandlerV2){
+                    //hnd.p2pUnmarshal(nodeId, ctx);
+                    System.out.println("MY пытаемся положить в пакет то что надо3. my_field="
+                        +((CacheContinuousQueryHandlerV2)info.hnd).my_field);
+                }
 
                 data.addItem(new DiscoveryDataItem(routineId,
                     info.prjPred,
@@ -501,6 +558,46 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
                     for (Map.Entry<UUID, LocalRoutineInfo> e : clientRoutineMap.entrySet()) {
                         UUID routineId = e.getKey();
                         LocalRoutineInfo info = e.getValue();
+
+                        if (info.hnd instanceof CacheContinuousQueryHandlerV2){
+                            System.out.println("MY пытаемся забрать из пакета то что надо. my_field="
+                                +((CacheContinuousQueryHandlerV2)info.hnd).my_field);
+
+                            StartRequestData requestData = info.reqData ;
+                            IgniteCheckedException err = null;
+
+                            try {
+                                if (ctx.config().isPeerClassLoadingEnabled()) {
+                                    String clsName = requestData.className();
+                                    System.out.println("MY processStartRequest clsName="+clsName);
+                                    if (clsName != null) {
+                                        GridDeploymentInfo depInfo = requestData.deploymentInfo();
+
+                                        GridDeployment dep = ctx.deploy().getGlobalDeployment(depInfo.deployMode(), clsName, clsName,
+                                            depInfo.userVersion(), clientNodeId, depInfo.classLoaderId(), depInfo.participants(), null);
+
+                                        if (dep == null)
+                                            throw new IgniteDeploymentCheckedException("Failed to obtain deployment for class: " + clsName);
+
+                                        //U.unmarshal(marsh, byteCol[i], U.resolveClassLoader(ldr, ctx.gridConfig()));
+
+
+                                        requestData.p2pUnmarshal(ctx.continuous().marsh, U.resolveClassLoader(dep.classLoader(), ctx.config()));
+                                    }
+
+
+                                    info.hnd.p2pUnmarshal(clientNodeId, ctx);
+                                }
+                            }
+                            catch (IgniteCheckedException e3) {
+                                err = e3;
+
+                                U.error(log, "Failed to register handler [nodeId=" + clientNodeId +
+                                    ", routineId=" + routineId + ']', e3);
+                            }
+
+
+                        }
 
                         try {
                             if (info.prjPred != null)
@@ -632,6 +729,12 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
         assert hnd != null;
         assert bufSize > 0;
         assert interval >= 0;
+
+        if (hnd instanceof CacheContinuousQueryHandlerV2){
+            //hnd.p2pUnmarshal(nodeId, ctx);
+            System.out.println("MY startRoutine my_field="
+                +((CacheContinuousQueryHandlerV2)hnd).my_field);
+        }
 
         // Generate ID.
         final UUID routineId = UUID.randomUUID();
@@ -976,7 +1079,7 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
         try {
             if (ctx.config().isPeerClassLoadingEnabled()) {
                 String clsName = data.className();
-
+                System.out.println("MY processStartRequest clsName="+clsName);
                 if (clsName != null) {
                     GridDeploymentInfo depInfo = data.deploymentInfo();
 
@@ -1203,7 +1306,12 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
 
                 checker.start();
             }
-
+            System.out.println("MY registerHandler doRegister");
+            if (ctx.config().isPeerClassLoadingEnabled() && hnd instanceof CacheContinuousQueryHandlerV2){
+                //hnd.p2pUnmarshal(nodeId, ctx);
+                System.out.println("MY registerHandler instanceof CacheContinuousQueryHandlerV2 p2pUnmarshal my_field="
+                    +((CacheContinuousQueryHandlerV2)hnd).my_field);
+            }
             GridContinuousHandler.RegisterStatus status = hnd.register(nodeId, routineId, ctx);
 
             if (status == GridContinuousHandler.RegisterStatus.DELAYED) {
@@ -1389,6 +1497,8 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
 
         /** Automatic unsubscribe flag. */
         private boolean autoUnsubscribe;
+
+        private StartRequestData reqData;
 
         /**
          * @param prjPred Projection predicate.

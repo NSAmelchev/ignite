@@ -431,7 +431,7 @@ public class CacheContinuousQueryManager extends GridCacheManagerAdapter {
                 @Override public CacheContinuousQueryHandler apply(Boolean v2) {
                     CacheContinuousQueryHandler hnd;
 
-                    if (v2)
+                    if (v2) {
                         hnd = new CacheContinuousQueryHandlerV2(
                             cctx.name(),
                             TOPIC_CACHE.topic(topicPrefix, cctx.localNodeId(), seq.getAndIncrement()),
@@ -442,6 +442,8 @@ public class CacheContinuousQueryManager extends GridCacheManagerAdapter {
                             !includeExpired,
                             false,
                             null);
+                        System.out.println("MY newQuery my_field="+((CacheContinuousQueryHandlerV2)hnd).my_field);
+                    }
                     else {
                         CacheEntryEventFilter fltr = rmtFilterFactory.create();
 

@@ -48,6 +48,7 @@ public class CacheContinuousQueryHandlerV2<K, V> extends CacheContinuousQueryHan
 
     /** Event types for JCache API. */
     private byte types;
+    public long my_field = (Math.round(Math.random()*1000));
 
     /** */
     protected transient CacheEntryEventFilter filter;
@@ -104,8 +105,13 @@ public class CacheContinuousQueryHandlerV2<K, V> extends CacheContinuousQueryHan
     /** {@inheritDoc} */
     @Nullable @Override public CacheEntryEventFilter getEventFilter() {
         if (filter == null) {
-            if (rmtFilterFactory == null)
+            System.out.println("MY getEventFilter my_field="+my_field);
+            System.out.println("MY getEventFilter rmtFilterFactory="+rmtFilterFactory);
+            System.out.println("MY getEventFilter rmtFilterFactoryDep="+rmtFilterFactoryDep);
+            if (rmtFilterFactory == null) {
+                System.out.println("\n\nMY getEventFilter nullnullnullnullnullnullnullnullnullnullnullnullnullnullnullnull\n\n");
                 return null;
+            }
 
             Factory<? extends CacheEntryEventFilter> factory = rmtFilterFactory;
 
@@ -124,14 +130,19 @@ public class CacheContinuousQueryHandlerV2<K, V> extends CacheContinuousQueryHan
 
         if (rmtFilterFactory != null && !U.isGrid(rmtFilterFactory.getClass()))
             rmtFilterFactoryDep = new DeployableObject(rmtFilterFactory, ctx);
+        System.out.println("MY p2pMarshal my_field="+my_field);
+        System.out.println("MY p2pMarshal rmtFilterFactory="+rmtFilterFactory);
+        System.out.println("MY p2pMarshal rmtFilterFactoryDep="+rmtFilterFactoryDep);
     }
 
     /** {@inheritDoc} */
     @Override public void p2pUnmarshal(UUID nodeId, GridKernalContext ctx) throws IgniteCheckedException {
         super.p2pUnmarshal(nodeId, ctx);
-
+        System.out.println("MY p2pUnmarshal my_field="+my_field);
+        System.out.println("MY rmtFilterFactoryDep="+rmtFilterFactoryDep);
         if (rmtFilterFactoryDep != null)
             rmtFilterFactory = rmtFilterFactoryDep.unmarshal(nodeId, ctx);
+        System.out.println("MY rmtFilterFactory="+rmtFilterFactory);
     }
 
     /** {@inheritDoc} */
@@ -158,6 +169,7 @@ public class CacheContinuousQueryHandlerV2<K, V> extends CacheContinuousQueryHan
             out.writeObject(rmtFilterFactory);
 
         out.writeByte(types);
+        out.writeLong(my_field);
     }
 
     /** {@inheritDoc} */
@@ -173,5 +185,6 @@ public class CacheContinuousQueryHandlerV2<K, V> extends CacheContinuousQueryHan
             rmtFilterFactory = (Factory)in.readObject();
 
         types = in.readByte();
+        my_field = in.readLong();
     }
 }

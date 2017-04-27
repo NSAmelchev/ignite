@@ -87,7 +87,7 @@ public class ClusterNodeMetricsSelfTest extends GridCommonAbstractTest {
         cfg.setDiscoverySpi(spi);
 
         cfg.setCacheConfiguration();
-        cfg.setMetricsUpdateFrequency(0);
+        cfg.setMetricsUpdateFrequency(500);
 
         CacheConfiguration<Integer, Object> ccfg = defaultCacheConfiguration();
         ccfg.setName(CACHE_NAME);
@@ -173,16 +173,18 @@ public class ClusterNodeMetricsSelfTest extends GridCommonAbstractTest {
     public void testSingleTaskMetrics() throws Exception {
         Ignite ignite = grid();
 
-        ignite.compute().execute(new GridTestTask(), "testArg");
+        final CountDownLatch taskLatch = new CountDownLatch(2);
+        ignite.compute().executeAsync(new GridTestTask(taskLatch), "testArg");
 
         // Let metrics update twice.
-        final CountDownLatch latch = new CountDownLatch(2);
 
+        final CountDownLatch latch = new CountDownLatch(3);
         ignite.events().localListen(new IgnitePredicate<Event>() {
             @Override public boolean apply(Event evt) {
                 assert evt.type() == EVT_NODE_METRICS_UPDATED;
 
                 latch.countDown();
+                taskLatch.countDown();
 
                 return true;
             }
@@ -203,7 +205,7 @@ public class ClusterNodeMetricsSelfTest extends GridCommonAbstractTest {
         assert metrics.getAverageWaitingJobs() == 0;
         assert metrics.getCurrentActiveJobs() == 0;
         assert metrics.getCurrentCancelledJobs() == 0;
-        assert metrics.getCurrentJobExecuteTime() == 0;
+        assert metrics.getCurrentJobExecuteTime() > 0;
         assert metrics.getCurrentJobWaitTime() == 0;
         assert metrics.getCurrentWaitingJobs() == 0;
         assert metrics.getMaximumActiveJobs() == 1;
@@ -339,8 +341,7 @@ public class ClusterNodeMetricsSelfTest extends GridCommonAbstractTest {
         final Ignite ignite1 = startGrid(1);
 
         GridTestUtils.waitForCondition(new GridAbsPredicate() {
-            @Override
-            public boolean apply() {
+            @Override public boolean apply() {
                 return ignite0.cluster().nodes().size() == 2 && ignite1.cluster().nodes().size() == 2;
             }
         }, 3000L);

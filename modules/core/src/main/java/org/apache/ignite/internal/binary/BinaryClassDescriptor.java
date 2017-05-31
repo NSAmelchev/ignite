@@ -42,6 +42,7 @@ import org.apache.ignite.binary.BinaryObjectException;
 import org.apache.ignite.binary.BinaryReflectiveSerializer;
 import org.apache.ignite.binary.BinarySerializer;
 import org.apache.ignite.binary.Binarylizable;
+import org.apache.ignite.internal.binary.streams.BinaryOutputStream;
 import org.apache.ignite.internal.marshaller.optimized.OptimizedMarshaller;
 import org.apache.ignite.internal.processors.cache.CacheObjectImpl;
 import org.apache.ignite.internal.processors.query.QueryUtils;
@@ -779,21 +780,35 @@ public class BinaryClassDescriptor {
                 break;
 
             case EXTERNALIZABLE:
-                if (preWrite(writer, obj)) {
-                    try {
-                        ((Externalizable)obj).writeExternal(writer);
+                BinaryOutputStream out = writer.out();
+                int start = out.position();
+                out.position(out.position() + GridBinaryMarshaller.DFLT_EXTERNALIZABLE_HDR_LEN);
 
-                        postWrite(writer);
-
-                        postWriteHashCode(writer, obj);
-                    }
-                    catch (IOException e) {
-                        throw new BinaryObjectException("Failed to deserialize object [typeName=" + typeName + ']', e);
-                    }
-                    finally {
-                        writer.popSchema();
-                    }
+                if (!registered) {
+                    String clsName = cls.getName();
+                    if (clsName != null)
+                        writer.doWriteString(clsName);
                 }
+
+                try {
+                    ((Externalizable)obj).writeExternal(writer);
+                }
+                catch (IOException e) {
+                    throw new BinaryObjectException("Failed to deserialize object [typeName=" + typeName + ']', e);
+                }
+
+                // Actual write.
+                int retPos = out.position();
+
+                out.unsafePosition(start);
+
+                System.out.println("MY registered="+registered);
+                System.out.println("MY typeId="+typeId);
+                out.unsafeWriteByte(GridBinaryMarshaller.EXTERNALIZABLE_OBJ);
+                out.unsafeWriteInt(registered ? typeId : GridBinaryMarshaller.UNREGISTERED_TYPE_ID);
+                out.unsafeWriteInt(retPos - start);
+
+                out.unsafePosition(retPos);
 
                 break;
 

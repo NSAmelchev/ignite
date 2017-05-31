@@ -1834,6 +1834,16 @@ public class BinaryUtils {
                 return po;
             }
 
+            case GridBinaryMarshaller.EXTERNALIZABLE_OBJ: {
+                int len = in.readInt();
+
+                Object obj;
+
+
+
+                return null;
+            }
+
             case GridBinaryMarshaller.BYTE:
                 return in.readByte();
 

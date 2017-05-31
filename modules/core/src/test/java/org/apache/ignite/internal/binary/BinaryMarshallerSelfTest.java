@@ -593,6 +593,23 @@ public class BinaryMarshallerSelfTest extends GridCommonAbstractTest {
     /**
      * @throws Exception If failed.
      */
+    public void testExternalizable() throws Exception {
+        SimpleExternalizable obj = new SimpleExternalizable("field");
+
+        byte[] bytes = marshal(obj, binaryMarshaller()).array();
+        System.out.println("MY bytes="+ Arrays.toString(bytes));
+
+        assertEquals(GridBinaryMarshaller.EXTERNALIZABLE_OBJ, bytes[0]);
+
+        SimpleExternalizable other = marshalUnmarshal(obj);
+
+        assertEquals(obj.field, other.field);
+
+    }
+
+    /**
+     * @throws Exception If failed.
+     */
     public void testMapEntry() throws Exception {
         Map.Entry<Integer, String> e = new GridMapEntry<>(1, "str1");
 

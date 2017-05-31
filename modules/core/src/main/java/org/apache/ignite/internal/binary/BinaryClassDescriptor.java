@@ -802,8 +802,6 @@ public class BinaryClassDescriptor {
 
                 out.unsafePosition(start);
 
-                System.out.println("MY registered="+registered);
-                System.out.println("MY typeId="+typeId);
                 out.unsafeWriteByte(GridBinaryMarshaller.EXTERNALIZABLE_OBJ);
                 out.unsafeWriteInt(registered ? typeId : GridBinaryMarshaller.UNREGISTERED_TYPE_ID);
                 out.unsafeWriteInt(retPos - start);

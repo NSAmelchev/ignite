@@ -597,7 +597,6 @@ public class BinaryMarshallerSelfTest extends GridCommonAbstractTest {
         SimpleExternalizable obj = new SimpleExternalizable("field");
 
         byte[] bytes = marshal(obj, binaryMarshaller()).array();
-        System.out.println("MY bytes="+ Arrays.toString(bytes));
 
         assertEquals(GridBinaryMarshaller.EXTERNALIZABLE_OBJ, bytes[0]);
 

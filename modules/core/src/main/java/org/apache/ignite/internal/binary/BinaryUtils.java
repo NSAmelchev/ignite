@@ -2140,6 +2140,21 @@ public class BinaryUtils {
     }
 
     /**
+     * Check if class is externalizable.
+     *
+     * @param cls Class.
+     * @return {@code True} if binarylizable.
+     */
+    public static boolean isExternalizable(Class cls) {
+        for (Class c = cls; c != null && !c.equals(Object.class); c = c.getSuperclass()) {
+            if (Externalizable.class.isAssignableFrom(c))
+                return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Determines whether class contains custom Java serialization logic.
      *
      * @param cls Class.
@@ -2148,9 +2163,6 @@ public class BinaryUtils {
     @SuppressWarnings("unchecked")
     public static boolean isCustomJavaSerialization(Class cls) {
         for (Class c = cls; c != null && !c.equals(Object.class); c = c.getSuperclass()) {
-            if (Externalizable.class.isAssignableFrom(c))
-                return true;
-
             try {
                 Method writeObj = c.getDeclaredMethod("writeObject", ObjectOutputStream.class);
                 Method readObj = c.getDeclaredMethod("readObject", ObjectInputStream.class);

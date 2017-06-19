@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.binary;
 
+import java.io.Externalizable;
+import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -190,12 +192,11 @@ public class BinaryClassDescriptor {
 
         if (useOptMarshaller && userType && !U.isIgnite(cls) && !U.isJdk(cls) && !QueryUtils.isGeometryClass(cls)) {
             U.warn(ctx.log(), "Class \"" + cls.getName() + "\" cannot be serialized using " +
-                BinaryMarshaller.class.getSimpleName() + " because it either implements Externalizable interface " +
-                "or have writeObject/readObject methods. " + OptimizedMarshaller.class.getSimpleName() + " will be " +
-                "used instead and class instances will be deserialized on the server. Please ensure that all nodes " +
-                "have this class in classpath. To enable binary serialization either implement " +
-                Binarylizable.class.getSimpleName() + " interface or set explicit serializer using " +
-                "BinaryTypeConfiguration.setSerializer() method.");
+                BinaryMarshaller.class.getSimpleName() + " because it  have writeObject/readObject methods. " +
+                OptimizedMarshaller.class.getSimpleName() + " will be used instead and class instances will be " +
+                "deserialized on the server. Please ensure that all nodes have this class in classpath. To enable " +
+                "binary serialization either implement " + Binarylizable.class.getSimpleName() + " interface or set " +
+                "explicit serializer using BinaryTypeConfiguration.setSerializer() method.");
         }
 
         switch (mode) {
@@ -263,6 +264,7 @@ public class BinaryClassDescriptor {
                 break;
 
             case BINARY:
+            case EXTERNALIZABLE:
                 ctor = constructor(cls);
                 fields = null;
                 stableFieldsMeta = null;
@@ -775,6 +777,27 @@ public class BinaryClassDescriptor {
 
                 break;
 
+            case EXTERNALIZABLE:
+                if (preWrite(writer, obj)) {
+                    try {
+                        writer.rawWriter();
+
+                        ((Externalizable)obj).writeExternal(writer);
+
+                        postWrite(writer);
+
+                        postWriteHashCode(writer, obj);
+                    }
+                    catch (IOException e) {
+                        throw new BinaryObjectException("Failed to deserialize object [typeName=" + typeName + ']', e);
+                    }
+                    finally {
+                        writer.popSchema();
+                    }
+                }
+
+                break;
+
             case OBJECT:
                 if (userType && !stableSchemaPublished) {
                     // Update meta before write object with new schema
@@ -832,6 +855,15 @@ public class BinaryClassDescriptor {
                         serializer.readBinary(res, reader);
                     else
                         ((Binarylizable)res).readBinary(reader);
+
+                    break;
+
+                case EXTERNALIZABLE:
+                    res = newInstance();
+
+                    reader.setHandle(res);
+
+                    ((Externalizable)res).readExternal(reader);
 
                     break;
 

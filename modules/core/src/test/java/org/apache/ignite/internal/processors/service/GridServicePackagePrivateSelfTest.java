@@ -20,7 +20,7 @@ package org.apache.ignite.internal.processors.service;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.Ignition;
 import org.apache.ignite.internal.processors.service.inner.MyService;
-import org.apache.ignite.internal.processors.service.inner.MyServiceFactory;
+import org.apache.ignite.internal.processors.service.inner.MyServiceHelper;
 import org.apache.ignite.testframework.junits.common.GridCommonAbstractTest;
 
 /**
@@ -34,7 +34,7 @@ public class GridServicePackagePrivateSelfTest extends GridCommonAbstractTest {
         try {
             Ignite server = startGrid("server");
 
-            server.services().deployClusterSingleton("my-service", MyServiceFactory.create());
+            server.services().deployClusterSingleton("my-service", MyServiceHelper.getServiceClassName(), null);
 
             Ignition.setClientMode(true);
 

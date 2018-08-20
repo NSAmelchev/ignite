@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.processors.service;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import junit.framework.TestCase;
 import org.apache.ignite.Ignite;
@@ -94,7 +96,11 @@ public class GridServiceProcessorMultiNodeSelfTest extends GridServiceProcessorA
 
         IgniteServices svcs = g.services();
 
-        IgniteFuture<?> fut = svcs.deployKeyAffinitySingletonAsync(name, new AffinityService(affKey),
+        Map<String, Object> prop = new HashMap<>();
+
+        prop.put("affKey", affKey);
+
+        IgniteFuture<?> fut = svcs.deployKeyAffinitySingletonAsync(name, AffinityService.class.getName(), prop,
             CACHE_NAME, affKey);
 
         info("Deployed service: " + name);

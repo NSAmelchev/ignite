@@ -22,8 +22,9 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
-import javax.cache.configuration.Factory;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
@@ -37,7 +38,6 @@ import org.apache.ignite.services.Service;
 import org.apache.ignite.services.ServiceConfiguration;
 import org.apache.ignite.services.ServiceContext;
 import org.apache.ignite.testframework.GridTestUtils;
-import org.apache.ignite.testframework.configvariations.Parameters;
 import org.apache.ignite.testframework.junits.IgniteConfigVariationsAbstractTest;
 
 /**
@@ -59,12 +59,11 @@ public class IgniteServiceConfigVariationsFullApiTest extends IgniteConfigVariat
     /** Test object id counter. */
     private static int cntr;
 
-    /** Callable factories. */
-    @SuppressWarnings("unchecked")
-    private static final Factory[] serviceFactories = new Factory[] {
-        Parameters.factory(TestServiceImpl.class),
-        Parameters.factory(TestServiceImplExternalizable.class),
-        Parameters.factory(TestServiceImplBinarylizable.class)
+    /** Testing services class names. */
+    private static final String[] SERVICES_CLASS_NAMES = new String[] {
+        TestServiceImpl.class.getName(),
+        TestServiceImplExternalizable.class.getName(),
+        TestServiceImplBinarylizable.class.getName()
     };
 
     /** {@inheritDoc} */
@@ -86,8 +85,9 @@ public class IgniteServiceConfigVariationsFullApiTest extends IgniteConfigVariat
      */
     public void testNodeSingletonDeploy() throws Exception {
         runInAllDataModes(new ServiceTestRunnable(true, new DeployClosure() {
-            @Override public void run(IgniteServices services, String svcName, TestService svc) throws Exception {
-                services.deployNodeSingleton(svcName, (Service)svc);
+            @Override public void run(IgniteServices services, String svcName, String srvcClsName,
+                Map<String, Object> prop) throws Exception {
+                services.deployNodeSingleton(svcName, srvcClsName, prop);
 
                 // TODO: Waiting for deployment should be removed after IEP-17 completion
                 GridTestUtils.waitForCondition(() -> services.service(svcName) != null, DEPLOYMENT_WAIT_TIMEOUT);
@@ -102,8 +102,9 @@ public class IgniteServiceConfigVariationsFullApiTest extends IgniteConfigVariat
      */
     public void testClusterSingletonDeploy() throws Exception {
         runInAllDataModes(new ServiceTestRunnable(false, new DeployClosure() {
-            @Override public void run(IgniteServices services, String svcName, TestService svc) throws Exception {
-                services.deployClusterSingleton(svcName, (Service)svc);
+            @Override public void run(IgniteServices services, String svcName, String srvcClsName,
+                Map<String, Object> prop) throws Exception {
+                services.deployClusterSingleton(svcName, srvcClsName, prop);
 
                 // TODO: Waiting for deployment should be removed after IEP-17 completion
                 GridTestUtils.waitForCondition(() -> services.service(svcName) != null, DEPLOYMENT_WAIT_TIMEOUT);
@@ -118,11 +119,12 @@ public class IgniteServiceConfigVariationsFullApiTest extends IgniteConfigVariat
      */
     public void testKeyAffinityDeploy() throws Exception {
         runInAllDataModes(new ServiceTestRunnable(false, new DeployClosure() {
-            @Override public void run(IgniteServices services, String svcName, TestService svc) {
+            @Override public void run(IgniteServices services, String svcName, String srvcClsName,
+                Map<String, Object> prop) {
                 IgniteCache<Object, Object> cache = grid(testedNodeIdx).getOrCreateCache(CACHE_NAME);
 
                 try {
-                    services.deployKeyAffinitySingleton(svcName, (Service)svc, cache.getName(), primaryKey(cache));
+                    services.deployKeyAffinitySingleton(svcName, srvcClsName, prop, cache.getName(), primaryKey(cache));
                 }
                 catch (IgniteCheckedException e) {
                     throw new IgniteException(e);
@@ -138,8 +140,9 @@ public class IgniteServiceConfigVariationsFullApiTest extends IgniteConfigVariat
      */
     public void testMultipleDeploy() throws Exception {
         runInAllDataModes(new ServiceTestRunnable(true, new DeployClosure() {
-            @Override public void run(IgniteServices services, String svcName, TestService svc) {
-                services.deployMultiple(svcName, (Service)svc, 0, 1);
+            @Override public void run(IgniteServices services, String svcName, String srvcClsName,
+                Map<String, Object> prop) {
+                services.deployMultiple(svcName, srvcClsName, prop, 0, 1);
             }
         }));
     }
@@ -151,14 +154,17 @@ public class IgniteServiceConfigVariationsFullApiTest extends IgniteConfigVariat
      */
     public void testDeploy() throws Exception {
         runInAllDataModes(new ServiceTestRunnable(false, new DeployClosure() {
-            @Override public void run(IgniteServices services, String svcName, TestService svc) throws Exception {
-                services.deployClusterSingleton(svcName, (Service)svc);
+            @Override public void run(IgniteServices services, String svcName, String srvcClsName,
+                Map<String, Object> prop) throws Exception {
+                services.deployClusterSingleton(svcName, srvcClsName, prop);
 
                 ServiceConfiguration cfg = new ServiceConfiguration();
 
                 cfg.setName(svcName);
 
-                cfg.setService((Service)svc);
+                cfg.setServiceClassName(srvcClsName);
+
+                cfg.setServiceProperties(prop);
 
                 cfg.setTotalCount(1);
 
@@ -198,8 +204,8 @@ public class IgniteServiceConfigVariationsFullApiTest extends IgniteConfigVariat
 
         /** {@inheritDoc} */
         @Override public void run() throws Exception {
-            for (Factory factory : serviceFactories)
-                testService((TestService)factory.create(), sticky, deployC);
+            for (String clsName : SERVICES_CLASS_NAMES)
+                testService(clsName, sticky, deployC);
         }
     }
 
@@ -213,33 +219,31 @@ public class IgniteServiceConfigVariationsFullApiTest extends IgniteConfigVariat
          * @param svc Service.
          * @throws Exception In case of an error.
          */
-        void run(IgniteServices services, String svcName, TestService svc) throws Exception;
+        void run(IgniteServices services, String svcName, String srvcClsName, Map<String, Object> prop) throws Exception;
     }
 
     /**
      * Tests deployment and contract.
      *
-     * @param svc Service.
+     * @param srvcClsName Service class name.
      * @param sticky Sticky.
      * @param deployC Closure.
      * @throws Exception If failed.
      */
-    protected void testService(TestService svc, boolean sticky, DeployClosure deployC) throws Exception {
+    protected void testService(String srvcClsName, boolean sticky, DeployClosure deployC) throws Exception {
         IgniteServices services;
         IgniteEx ignite = testedGrid();
 
         services = ignite.services();
 
         try {
+            HashMap<String, Object> prop = new HashMap<>();
+
             Object expected = value(++cntr);
 
-            // Put value for testing Service instance serialization.
-            svc.setValue(expected);
+            prop.put("val", expected);
 
-            deployC.run(services, SERVICE_NAME, svc);
-
-            // Expect correct value from local instance.
-            assertEquals(expected, svc.getValue());
+            deployC.run(services, SERVICE_NAME, srvcClsName, prop);
 
             // Use stickiness to make sure data will be fetched from the same instance.
             TestService proxy = services.serviceProxy(SERVICE_NAME, TestService.class, sticky);
@@ -313,7 +317,10 @@ public class IgniteServiceConfigVariationsFullApiTest extends IgniteConfigVariat
 
         /** {@inheritDoc} */
         @Override public void init(ServiceContext ctx) throws Exception {
-            // No-op
+            Map<String, Object> prop = ctx.getProperties();
+
+            if (prop != null)
+                val = ctx.getProperties().get("val");
         }
 
         /** {@inheritDoc} */

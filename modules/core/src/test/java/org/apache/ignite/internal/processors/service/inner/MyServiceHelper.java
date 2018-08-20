@@ -18,13 +18,13 @@
 package org.apache.ignite.internal.processors.service.inner;
 
 /**
- * Service factory.
+ * Package-private service helper.
  */
-public class MyServiceFactory {
+public class MyServiceHelper {
     /**
-     * @return Service.
+     * @return Service class name.
      */
-    public static MyService create() {
-        return new MyServiceImpl();
+    public static String getServiceClassName() {
+        return MyServiceImpl.class.getName();
     }
 }

@@ -18,7 +18,9 @@
 package org.apache.ignite.internal.processors.service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.configuration.CacheConfiguration;
@@ -84,7 +86,14 @@ public class GridServiceProcessorMultiNodeConfigSelfTest extends GridServiceProc
         cfg.setAffinityKey(AFFINITY_KEY);
         cfg.setMaxPerNodeCount(1);
         cfg.setTotalCount(1);
-        cfg.setService(new AffinityService(AFFINITY_KEY));
+
+        Map<String, Object> prop = new HashMap<>();
+
+        prop.put("affKey", AFFINITY_KEY);
+
+        cfg.setServiceClassName(AffinityService.class.getName());
+
+        cfg.setServiceProperties(prop);
 
         cfgs.add(cfg);
 

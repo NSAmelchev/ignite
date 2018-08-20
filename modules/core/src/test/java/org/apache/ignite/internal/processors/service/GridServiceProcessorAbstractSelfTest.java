@@ -19,6 +19,8 @@ package org.apache.ignite.internal.processors.service;
 
 import java.io.Serializable;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -448,8 +450,11 @@ public abstract class GridServiceProcessorAbstractSelfTest extends GridCommonAbs
 
         IgniteServices svcs = g.services().withAsync();
 
-        svcs.deployKeyAffinitySingleton(name, new AffinityService(affKey),
-                CACHE_NAME, affKey);
+        Map<String, Object> prop = new HashMap<>();
+
+        prop.put("affKey", affKey);
+
+        svcs.deployKeyAffinitySingleton(name, AffinityService.class.getName(), prop, CACHE_NAME, affKey);
 
         IgniteFuture<?> fut = svcs.future();
 
@@ -475,8 +480,12 @@ public abstract class GridServiceProcessorAbstractSelfTest extends GridCommonAbs
 
         String name = "serviceAffinity";
 
-        IgniteFuture<?> fut = g.services().deployKeyAffinitySingletonAsync(name, new AffinityService(affKey),
-            CACHE_NAME, affKey);
+        Map<String, Object> prop = new HashMap<>();
+
+        prop.put("affKey", affKey);
+
+        IgniteFuture<?> fut = g.services().deployKeyAffinitySingletonAsync(name, AffinityService.class.getName(),
+            prop, CACHE_NAME, affKey);
 
         info("Deployed service: " + name);
 
@@ -821,7 +830,7 @@ public abstract class GridServiceProcessorAbstractSelfTest extends GridCommonAbs
         private static final long serialVersionUID = 0L;
 
         /** Affinity key. */
-        private final Object affKey;
+        private Object affKey;
 
         /** Grid. */
         @IgniteInstanceResource
@@ -830,8 +839,8 @@ public abstract class GridServiceProcessorAbstractSelfTest extends GridCommonAbs
         /**
          * @param affKey Affinity key.
          */
-        public AffinityService(Object affKey) {
-            this.affKey = affKey;
+        public AffinityService() {
+            // No-op.
         }
 
         /** {@inheritDoc} */
@@ -841,6 +850,11 @@ public abstract class GridServiceProcessorAbstractSelfTest extends GridCommonAbs
 
         /** {@inheritDoc} */
         @Override public void init(ServiceContext ctx) throws Exception {
+            Map<String, Object> prop = ctx.getProperties();
+
+            if (prop != null)
+                this.affKey = prop.get("affKey");
+
             X.println("Initializing affinity service for key: " + affKey);
 
             ClusterNode n = g.affinity(CACHE_NAME).mapKeyToNode(affKey);

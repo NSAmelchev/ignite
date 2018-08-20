@@ -78,7 +78,7 @@ public class IgniteServiceDynamicCachesSelfTest extends GridCommonAbstractTest {
 
             final String svcName = "myService";
 
-            svcs.deployKeyAffinitySingleton(svcName, new TestService(), cacheName, primaryKey(ig.cache(cacheName)));
+            svcs.deployKeyAffinitySingleton(svcName, TestService.class.getName(), null, cacheName, primaryKey(ig.cache(cacheName)));
 
             boolean res = GridTestUtils.waitForCondition(new PA() {
                 @Override public boolean apply() {
@@ -128,7 +128,7 @@ public class IgniteServiceDynamicCachesSelfTest extends GridCommonAbstractTest {
 
         awaitPartitionMapExchange();
 
-        svcs.deployKeyAffinitySingleton(svcName, new TestService(), cacheName, key);
+        svcs.deployKeyAffinitySingleton(svcName, TestService.class.getName(), null, cacheName, key);
 
         assert svcs.service(svcName) == null;
 

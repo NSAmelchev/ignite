@@ -18,6 +18,7 @@
 package org.apache.ignite;
 
 import java.util.Collection;
+import java.util.Map;
 import org.apache.ignite.cluster.ClusterGroup;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.services.ServiceDeploymentException;
@@ -160,7 +161,11 @@ public interface IgniteServices extends IgniteAsyncSupport {
      * @throws ServiceDeploymentException If failed to deploy service.
      */
     @IgniteAsyncSupported
+    @Deprecated
     public void deployClusterSingleton(String name, Service svc) throws ServiceDeploymentException;
+
+    public void deployClusterSingleton(String name, String srvcClsName, Map<String, Object> prop)
+        throws ServiceDeploymentException;
 
     /**
      * Asynchronously deploys a cluster-wide singleton service. Ignite will guarantee that there is always
@@ -198,6 +203,11 @@ public interface IgniteServices extends IgniteAsyncSupport {
      */
     @IgniteAsyncSupported
     public void deployNodeSingleton(String name, Service svc) throws ServiceDeploymentException;
+
+
+    // TODO: Do not forget mark properties as nullable.
+
+    public void deployNodeSingleton(String name, String srvcClsName, Map<String, Object> prop) throws ServiceDeploymentException;
 
     /**
      * Asynchronously deploys a per-node singleton service. Ignite will guarantee that there is always
@@ -250,6 +260,9 @@ public interface IgniteServices extends IgniteAsyncSupport {
     public void deployKeyAffinitySingleton(String name, Service svc, @Nullable String cacheName, Object affKey)
         throws ServiceDeploymentException;
 
+    public void deployKeyAffinitySingleton(String name, String srvcClsName, Map<String, Object> prop,
+        @Nullable String cacheName, Object affKey) throws ServiceDeploymentException;
+
     /**
      * Asynchronously deploys one instance of this service on the primary node for a given affinity key.
      * Whenever topology changes and primary node assignment changes, Ignite will always
@@ -284,6 +297,9 @@ public interface IgniteServices extends IgniteAsyncSupport {
     public IgniteFuture<Void> deployKeyAffinitySingletonAsync(String name, Service svc, @Nullable String cacheName,
         Object affKey);
 
+    public IgniteFuture<Void> deployKeyAffinitySingletonAsync(String name, String srvcClsName,
+        Map<String, Object> prop, @Nullable String cacheName, Object affKey);
+
     /**
      * Deploys multiple instances of the service on the grid. Ignite will deploy a
      * maximum amount of services equal to {@code 'totalCnt'} parameter making sure that
@@ -315,8 +331,12 @@ public interface IgniteServices extends IgniteAsyncSupport {
      * @throws ServiceDeploymentException If failed to deploy service.
      */
     @IgniteAsyncSupported
+    @Deprecated
     public void deployMultiple(String name, Service svc, int totalCnt, int maxPerNodeCnt)
         throws ServiceDeploymentException;
+
+    public void deployMultiple(String name, String srvcClsName, Map<String, Object> prop,
+        int totalCnt, int maxPerNodeCnt) throws ServiceDeploymentException;
 
     /**
      * Asynchronously deploys multiple instances of the service on the grid. Ignite will deploy a

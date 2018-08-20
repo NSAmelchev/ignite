@@ -24,6 +24,7 @@ import java.io.ObjectOutput;
 import java.io.ObjectStreamException;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Map;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.IgniteServices;
@@ -95,6 +96,24 @@ public class IgniteServicesImpl extends AsyncSupportAdapter implements IgniteSer
     }
 
     /** {@inheritDoc} */
+    @Override public void deployNodeSingleton(String name, String srvcClsName, Map<String, Object> prop) {
+        A.notNull(name, "name");
+        A.notNull(srvcClsName, "svc");
+
+        guard();
+
+        try {
+            saveOrGet(ctx.service().deployNodeSingleton(prj, name, srvcClsName, prop));
+        }
+        catch (IgniteCheckedException e) {
+            throw U.convertException(e);
+        }
+        finally {
+            unguard();
+        }
+    }
+
+    /** {@inheritDoc} */
     @Override public IgniteFuture<Void> deployNodeSingletonAsync(String name, Service svc) {
         A.notNull(name, "name");
         A.notNull(svc, "svc");
@@ -128,6 +147,24 @@ public class IgniteServicesImpl extends AsyncSupportAdapter implements IgniteSer
     }
 
     /** {@inheritDoc} */
+    @Override public void deployClusterSingleton(String name, String srvcClsName, Map<String, Object> prop) {
+        A.notNull(name, "name");
+        A.notNull(srvcClsName, "svc");
+
+        guard();
+
+        try {
+            saveOrGet(ctx.service().deployClusterSingleton(prj, name, srvcClsName, prop));
+        }
+        catch (IgniteCheckedException e) {
+            throw U.convertException(e);
+        }
+        finally {
+            unguard();
+        }
+    }
+
+    /** {@inheritDoc} */
     @Override public IgniteFuture<Void> deployClusterSingletonAsync(String name, Service svc) {
         A.notNull(name, "name");
         A.notNull(svc, "svc");
@@ -150,7 +187,28 @@ public class IgniteServicesImpl extends AsyncSupportAdapter implements IgniteSer
         guard();
 
         try {
-            saveOrGet(ctx.service().deployMultiple(prj, name, svc, totalCnt, maxPerNodeCnt));
+            saveOrGet(ctx.service().deployMultiple(prj, name, svc.getClass().getName(), null,
+                totalCnt, maxPerNodeCnt));
+        }
+        catch (IgniteCheckedException e) {
+            throw U.convertException(e);
+        }
+        finally {
+            unguard();
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override public void deployMultiple(String name, String srvcClsName, Map<String, Object> prop,
+        int totalCnt, int maxPerNodeCnt) {
+        A.notNull(name, "name");
+        A.notNull(srvcClsName, "svc");
+
+        guard();
+
+        try {
+            saveOrGet(ctx.service().deployMultiple(prj, name, srvcClsName, prop,
+                totalCnt, maxPerNodeCnt));
         }
         catch (IgniteCheckedException e) {
             throw U.convertException(e);
@@ -168,8 +226,8 @@ public class IgniteServicesImpl extends AsyncSupportAdapter implements IgniteSer
         guard();
 
         try {
-            return (IgniteFuture<Void>)new IgniteFutureImpl<>(ctx.service().deployMultiple(prj, name, svc,
-                totalCnt, maxPerNodeCnt));
+            return (IgniteFuture<Void>)new IgniteFutureImpl<>(ctx.service().deployMultiple(prj, name,
+                svc.getClass().getName(), null, totalCnt, maxPerNodeCnt));
         }
         finally {
             unguard();
@@ -186,7 +244,29 @@ public class IgniteServicesImpl extends AsyncSupportAdapter implements IgniteSer
         guard();
 
         try {
-            saveOrGet(ctx.service().deployKeyAffinitySingleton(name, svc, cacheName, affKey));
+            saveOrGet(ctx.service().deployKeyAffinitySingleton(name, svc.getClass().getName(), null,
+                cacheName, affKey));
+        }
+        catch (IgniteCheckedException e) {
+            throw U.convertException(e);
+        }
+        finally {
+            unguard();
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override public void deployKeyAffinitySingleton(String name, String srvcClsName, Map<String, Object> prop,
+        @Nullable String cacheName, Object affKey) {
+        A.notNull(name, "name");
+        A.notNull(srvcClsName, "svc");
+        A.notNull(affKey, "affKey");
+
+        guard();
+
+        try {
+            saveOrGet(ctx.service().deployKeyAffinitySingleton(name, srvcClsName, prop,
+                cacheName, affKey));
         }
         catch (IgniteCheckedException e) {
             throw U.convertException(e);
@@ -206,8 +286,26 @@ public class IgniteServicesImpl extends AsyncSupportAdapter implements IgniteSer
         guard();
 
         try {
-            return (IgniteFuture<Void>)new IgniteFutureImpl<>(ctx.service().deployKeyAffinitySingleton(name, svc,
-                cacheName, affKey));
+            return (IgniteFuture<Void>)new IgniteFutureImpl<>(ctx.service().deployKeyAffinitySingleton(name,
+                svc.getClass().getName(), null, cacheName, affKey));
+        }
+        finally {
+            unguard();
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override public IgniteFuture<Void> deployKeyAffinitySingletonAsync(String name, String srvcClsName,
+        Map<String, Object> prop, @Nullable String cacheName, Object affKey) {
+        A.notNull(name, "name");
+        A.notNull(srvcClsName, "srvcClsName");
+        A.notNull(affKey, "affKey");
+
+        guard();
+
+        try {
+            return (IgniteFuture<Void>)new IgniteFutureImpl<>(ctx.service().deployKeyAffinitySingleton(name,
+                srvcClsName, prop, cacheName, affKey));
         }
         finally {
             unguard();

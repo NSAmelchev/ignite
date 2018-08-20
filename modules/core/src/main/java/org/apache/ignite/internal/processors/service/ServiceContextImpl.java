@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.processors.service;
 
 import java.lang.reflect.Method;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -52,6 +53,9 @@ public class ServiceContextImpl implements ServiceContext {
     @GridToStringInclude
     private final Object affKey;
 
+    /* Properties. */
+    private final Map<String, Object> prop;
+
     /** Executor service. */
     @GridToStringExclude
     private final ExecutorService exe;
@@ -77,11 +81,13 @@ public class ServiceContextImpl implements ServiceContext {
         UUID execId,
         String cacheName,
         Object affKey,
+        Map<String, Object> prop,
         ExecutorService exe) {
         this.name = name;
         this.execId = execId;
         this.cacheName = cacheName;
         this.affKey = affKey;
+        this.prop = prop;
         this.exe = exe;
     }
 
@@ -109,6 +115,11 @@ public class ServiceContextImpl implements ServiceContext {
     @SuppressWarnings("unchecked")
     @Nullable @Override public <K> K affinityKey() {
         return (K)affKey;
+    }
+
+    /** {@inheritDoc} */
+    @Nullable @Override public Map<String, Object> getProperties() {
+        return prop;
     }
 
     /**

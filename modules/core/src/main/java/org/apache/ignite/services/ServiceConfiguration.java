@@ -18,10 +18,12 @@
 package org.apache.ignite.services;
 
 import java.io.Serializable;
+import java.util.Map;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.internal.util.tostring.GridToStringExclude;
 import org.apache.ignite.internal.util.typedef.internal.S;
 import org.apache.ignite.lang.IgnitePredicate;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Managed service configuration. In addition to deploying managed services by
@@ -57,9 +59,14 @@ public class ServiceConfiguration implements Serializable {
     /** Service name. */
     protected String name;
 
-    /** Service instance. */
-    @GridToStringExclude
-    private Service svc;
+    /** Service class name. */
+    protected String srvcClsName;
+
+    /** Service properties. */
+
+    // TODO: fields access can be private when lazy init was deleted.
+
+    @Nullable protected Map<String, Object> prop;
 
     /** Total count. */
     protected int totalCnt;
@@ -109,8 +116,9 @@ public class ServiceConfiguration implements Serializable {
      *
      * @return Service instance.
      */
+    @Deprecated
     public Service getService() {
-        return svc;
+        throw new UnsupportedOperationException("getService() method is deprecated. Use getServiceClassName() instead it.");
     }
 
     /**
@@ -121,8 +129,55 @@ public class ServiceConfiguration implements Serializable {
      * @param svc Service instance.
      * @return {@code this} for chaining.
      */
+    @Deprecated
     public ServiceConfiguration setService(Service svc) {
-        this.svc = svc;
+        this.srvcClsName = svc.getClass().getName();
+
+        return this;
+    }
+
+    /**
+     * Gets service instance class name.
+     * <p>
+     * This parameter is mandatory when deploying a service.
+     *
+     * @return Service instance class name.
+     */
+    public String getServiceClassName() {
+        return srvcClsName;
+    }
+
+    /**
+     * Sets service instance class name.
+     * <p>
+     * This parameter is mandatory when deploying a service.
+     *
+     * @param svc Service instance class name.
+     * @return {@code this} for chaining.
+     */
+    public ServiceConfiguration setServiceClassName(String srvcClsName) {
+        this.srvcClsName = srvcClsName;
+
+        return this;
+    }
+
+    /**
+     * Gets service properties.
+     *
+     * @return Service properties.
+     */
+    @Nullable public Map<String, Object> getServiceProperties() {
+        return prop;
+    }
+
+    /**
+     * Sets service properties.
+     *
+     * @param svc Service properties.
+     * @return {@code this} for chaining.
+     */
+    public ServiceConfiguration setServiceProperties(@Nullable Map<String, Object> prop) {
+        this.prop = prop;
 
         return this;
     }
@@ -304,7 +359,10 @@ public class ServiceConfiguration implements Serializable {
         if (name != null ? !name.equals(that.name) : that.name != null)
             return false;
 
-        if (svc != null ? !svc.getClass().equals(that.svc.getClass()) : that.svc != null)
+        if (srvcClsName != null ? !srvcClsName.equals(that.srvcClsName) : that.srvcClsName != null)
+            return false;
+
+        if (prop != null ? !prop.equals(that.prop) : that.prop != null)
             return false;
 
         return true;
@@ -317,9 +375,8 @@ public class ServiceConfiguration implements Serializable {
 
     /** {@inheritDoc} */
     @Override public String toString() {
-        String svcCls = svc == null ? "" : svc.getClass().getSimpleName();
         String nodeFilterCls = nodeFilter == null ? "" : nodeFilter.getClass().getSimpleName();
 
-        return S.toString(ServiceConfiguration.class, this, "svcCls", svcCls, "nodeFilterCls", nodeFilterCls);
+        return S.toString(ServiceConfiguration.class, this, "srvcClsName", srvcClsName, "nodeFilterCls", nodeFilterCls);
     }
 }

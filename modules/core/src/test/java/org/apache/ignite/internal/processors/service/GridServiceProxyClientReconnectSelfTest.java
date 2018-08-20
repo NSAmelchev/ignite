@@ -62,7 +62,7 @@ public class GridServiceProxyClientReconnectSelfTest extends GridCommonAbstractT
 
         Ignite client = startGrid("client");
 
-        client.services().deployClusterSingleton("my-service", new MyServiceImpl());
+        client.services().deployClusterSingleton("my-service", MyServiceImpl.class.getName(), null);
 
         MyService proxy = client.services().serviceProxy("my-service", MyService.class, false);
 
@@ -84,7 +84,7 @@ public class GridServiceProxyClientReconnectSelfTest extends GridCommonAbstractT
 
         assertTrue(latch.await(10, TimeUnit.SECONDS));
 
-        client.services().deployClusterSingleton("my-service", new MyServiceImpl());
+        client.services().deployClusterSingleton("my-service", MyServiceImpl.class.getName(), null);
 
         assertEquals(42, proxy.hello());
     }
@@ -98,7 +98,7 @@ public class GridServiceProxyClientReconnectSelfTest extends GridCommonAbstractT
 
         Ignite client = startGrid("client");
 
-        client.services().deployClusterSingleton("my-service", new MyLongInitServiceImpl());
+        client.services().deployClusterSingleton("my-service", MyLongInitServiceImpl.class.getName(), null);
 
         MyService proxy = client.services().serviceProxy("my-service", MyService.class, false);
 
@@ -120,7 +120,7 @@ public class GridServiceProxyClientReconnectSelfTest extends GridCommonAbstractT
 
         assertTrue(latch.await(10, TimeUnit.SECONDS));
 
-        client.services().deployClusterSingleton("my-service", new MyLongInitServiceImpl());
+        client.services().deployClusterSingleton("my-service", MyLongInitServiceImpl.class.getName(), null);
 
         assertEquals(9001, proxy.hello());
     }

@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.processors.service;
 
 import java.lang.Thread.UncaughtExceptionHandler;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -69,7 +70,6 @@ import org.apache.ignite.internal.processors.cache.DynamicCacheChangeBatch;
 import org.apache.ignite.internal.processors.cache.IgniteInternalCache;
 import org.apache.ignite.internal.processors.cache.binary.MetadataUpdateAcceptedMessage;
 import org.apache.ignite.internal.processors.cache.binary.MetadataUpdateProposedMessage;
-import org.apache.ignite.internal.processors.cache.distributed.dht.GridDhtTopologyFuture;
 import org.apache.ignite.internal.processors.cache.distributed.near.GridNearTxLocal;
 import org.apache.ignite.internal.processors.cache.query.CacheQuery;
 import org.apache.ignite.internal.processors.cache.query.GridCacheQueryManager;
@@ -453,7 +453,7 @@ public class GridServiceProcessor extends GridProcessorAdapter implements Ignite
         ensure(c.getName() != null, "getName() != null", null);
         ensure(c.getTotalCount() >= 0, "getTotalCount() >= 0", c.getTotalCount());
         ensure(c.getMaxPerNodeCount() >= 0, "getMaxPerNodeCount() >= 0", c.getMaxPerNodeCount());
-        ensure(c.getService() != null, "getService() != null", c.getService());
+        ensure(c.getServiceClassName() != null, "getServiceClassName() != null", c.getServiceClassName());
         ensure(c.getTotalCount() > 0 || c.getMaxPerNodeCount() > 0,
             "c.getTotalCount() > 0 || c.getMaxPerNodeCount() > 0", null);
     }
@@ -476,8 +476,9 @@ public class GridServiceProcessor extends GridProcessorAdapter implements Ignite
      * @param svc Service.
      * @return Future.
      */
+    @Deprecated
     public IgniteInternalFuture<?> deployNodeSingleton(ClusterGroup prj, String name, Service svc) {
-        return deployMultiple(prj, name, svc, 0, 1);
+        return deployMultiple(prj, name, svc.getClass().getName(), null, 0, 1);
     }
 
     /**
@@ -485,8 +486,29 @@ public class GridServiceProcessor extends GridProcessorAdapter implements Ignite
      * @param svc Service.
      * @return Future.
      */
+    public IgniteInternalFuture<?> deployNodeSingleton(ClusterGroup prj, String name, String srvcClsName,
+        @Nullable Map<String, Object> prop) {
+        return deployMultiple(prj, name, srvcClsName, prop, 0, 1);
+    }
+
+    /**
+     * @param name Service name.
+     * @param svc Service.
+     * @return Future.
+     */
+    @Deprecated
     public IgniteInternalFuture<?> deployClusterSingleton(ClusterGroup prj, String name, Service svc) {
-        return deployMultiple(prj, name, svc, 1, 1);
+        return deployMultiple(prj, name, svc.getClass().getName(), null, 1, 1);
+    }
+
+    /**
+     * @param name Service name.
+     * @param svc Service.
+     * @return Future.
+     */
+    public IgniteInternalFuture<?> deployClusterSingleton(ClusterGroup prj, String name, String srvcClsName,
+        @Nullable Map<String, Object> prop) {
+        return deployMultiple(prj, name, srvcClsName, prop, 1, 1);
     }
 
     /**
@@ -496,12 +518,13 @@ public class GridServiceProcessor extends GridProcessorAdapter implements Ignite
      * @param maxPerNodeCnt Max per-node count.
      * @return Future.
      */
-    public IgniteInternalFuture<?> deployMultiple(ClusterGroup prj, String name, Service svc, int totalCnt,
-        int maxPerNodeCnt) {
+    public IgniteInternalFuture<?> deployMultiple(ClusterGroup prj, String name, String srvcClsName,
+        @Nullable Map<String, Object> prop, int totalCnt, int maxPerNodeCnt) {
         ServiceConfiguration cfg = new ServiceConfiguration();
 
         cfg.setName(name);
-        cfg.setService(svc);
+        cfg.setServiceClassName(srvcClsName);
+        cfg.setServiceProperties(prop);
         cfg.setTotalCount(totalCnt);
         cfg.setMaxPerNodeCount(maxPerNodeCnt);
 
@@ -515,14 +538,15 @@ public class GridServiceProcessor extends GridProcessorAdapter implements Ignite
      * @param affKey Affinity key.
      * @return Future.
      */
-    public IgniteInternalFuture<?> deployKeyAffinitySingleton(String name, Service svc, String cacheName,
-        Object affKey) {
+    public IgniteInternalFuture<?> deployKeyAffinitySingleton(String name, String srvcClsName,
+        @Nullable Map<String, Object> prop, String cacheName, Object affKey) {
         A.notNull(affKey, "affKey");
 
         ServiceConfiguration cfg = new ServiceConfiguration();
 
         cfg.setName(name);
-        cfg.setService(svc);
+        cfg.setServiceClassName(srvcClsName);
+        cfg.setServiceProperties(prop);
         cfg.setCacheName(cacheName);
         cfg.setAffinityKey(affKey);
         cfg.setTotalCount(1);
@@ -558,7 +582,7 @@ public class GridServiceProcessor extends GridProcessorAdapter implements Ignite
             }
             catch (Exception e) {
                 U.error(log, "Failed to validate service configuration [name=" + cfg.getName() +
-                    ", srvc=" + cfg.getService() + ']', e);
+                    ", srvcClassName=" + cfg.getServiceClassName() + ']', e);
 
                 err = e;
             }
@@ -569,27 +593,15 @@ public class GridServiceProcessor extends GridProcessorAdapter implements Ignite
                 }
                 catch (Exception e) {
                     U.error(log, "Failed to authorize service creation [name=" + cfg.getName() +
-                        ", srvc=" + cfg.getService() + ']', e);
+                        ", srvcClassName=" + cfg.getServiceClassName() + ']', e);
 
                     err = e;
                 }
             }
 
-            if (err == null) {
-                try {
-                    byte[] srvcBytes = U.marshal(marsh, cfg.getService());
-
-                    cfgsCp.add(new LazyServiceConfiguration(cfg, srvcBytes));
-                }
-                catch (Exception e) {
-                    U.error(log, "Failed to marshal service with configured marshaller [name=" + cfg.getName() +
-                        ", srvc=" + cfg.getService() + ", marsh=" + marsh + "]", e);
-
-                    err = e;
-                }
-            }
-
-            if (err != null) {
+            if (err == null)
+                cfgsCp.add(cfg);
+            else {
                 if (failedFuts == null)
                     failedFuts = new ArrayList<>();
 
@@ -1347,6 +1359,7 @@ public class GridServiceProcessor extends GridProcessorAdapter implements Ignite
                         UUID.randomUUID(),
                         assigns.cacheName(),
                         assigns.affinityKey(),
+                        assigns.properties(),
                         Executors.newSingleThreadExecutor(threadFactory));
 
                     ctxs.add(svcCtx);
@@ -1434,35 +1447,13 @@ public class GridServiceProcessor extends GridProcessorAdapter implements Ignite
      * @throws IgniteCheckedException If failed.
      */
     private Service copyAndInject(ServiceConfiguration cfg) throws IgniteCheckedException {
-        Marshaller m = ctx.config().getMarshaller();
+        Service srvc = null;
 
-        if (cfg instanceof LazyServiceConfiguration) {
-            byte[] bytes = ((LazyServiceConfiguration)cfg).serviceBytes();
+        srvc = U.forceNewInstance(cfg.getServiceClassName());
 
-            Service srvc = U.unmarshal(m, bytes, U.resolveClassLoader(null, ctx.config()));
+        ctx.resource().inject(srvc);
 
-            ctx.resource().inject(srvc);
-
-            return srvc;
-        }
-        else {
-            Service svc = cfg.getService();
-
-            try {
-                byte[] bytes = U.marshal(m, svc);
-
-                Service cp = U.unmarshal(m, bytes, U.resolveClassLoader(svc.getClass().getClassLoader(), ctx.config()));
-
-                ctx.resource().inject(cp);
-
-                return cp;
-            }
-            catch (IgniteCheckedException e) {
-                U.error(log, "Failed to copy service (will reuse same instance): " + svc.getClass(), e);
-
-                return svc;
-            }
-        }
+        return srvc;
     }
 
     /**

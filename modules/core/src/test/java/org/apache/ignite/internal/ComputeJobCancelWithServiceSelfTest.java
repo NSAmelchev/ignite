@@ -64,7 +64,7 @@ public class ComputeJobCancelWithServiceSelfTest extends GridCommonAbstractTest 
     public void testJobCancel() throws Exception {
         Ignite server = startGrid("server");
 
-        server.services().deployNodeSingleton("my-service", new MyService());
+        server.services().deployNodeSingleton("my-service", MyService.class.getName(), null);
 
         Ignition.setClientMode(true);
 

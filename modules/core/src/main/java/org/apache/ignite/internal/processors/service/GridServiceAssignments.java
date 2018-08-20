@@ -88,6 +88,13 @@ public class GridServiceAssignments implements Serializable, GridCacheInternal {
     }
 
     /**
+     * @return Properties.
+     */
+    public Map<String, Object> properties() {
+        return cfg.getServiceProperties();
+    }
+
+    /**
      * @return Affinity key.
      */
     public Object affinityKey() {

@@ -56,20 +56,14 @@ public class ServiceDescriptorImpl implements ServiceDescriptor {
 
     /** {@inheritDoc} */
     @Override public Class<? extends Service> serviceClass() {
-        ServiceConfiguration cfg = dep.configuration();
+        String clsName = dep.configuration().getServiceClassName();
 
-        if (cfg instanceof LazyServiceConfiguration) {
-            String clsName = ((LazyServiceConfiguration)cfg).serviceClassName();
-
-            try {
-                return (Class<? extends Service>)Class.forName(clsName);
-            }
-            catch (ClassNotFoundException e) {
-                throw new IgniteException("Failed to find service class: " + clsName, e);
-            }
+        try {
+            return (Class<? extends Service>)Class.forName(clsName);
         }
-        else
-            return dep.configuration().getService().getClass();
+        catch (ClassNotFoundException e) {
+            throw new IgniteException("Failed to find service class: " + clsName, e);
+        }
     }
 
     /** {@inheritDoc} */

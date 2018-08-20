@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class IgniteServiceProxyTimeoutInitializedTest extends GridCommonAbstractTest {
     /** */
-    private static Service srvc;
+    private static String srvcClsName;
 
     /** */
     private static CountDownLatch latch1;
@@ -64,7 +64,7 @@ public class IgniteServiceProxyTimeoutInitializedTest extends GridCommonAbstract
 
         if (igniteInstanceName.endsWith("0")) {
             scfg.setName("testService");
-            scfg.setService(srvc);
+            scfg.setServiceClassName(srvcClsName);
             scfg.setMaxPerNodeCount(1);
             scfg.setTotalCount(1);
             scfg.setNodeFilter(new NodeFilter());
@@ -104,7 +104,7 @@ public class IgniteServiceProxyTimeoutInitializedTest extends GridCommonAbstract
      */
     @SuppressWarnings({"Convert2Lambda", "ThrowableResultOfMethodCallIgnored"})
     public void testUnavailableService() throws Exception {
-        srvc = new TestWaitServiceImpl();
+        srvcClsName = TestWaitServiceImpl.class.getName();
 
         latch1 = new CountDownLatch(1);
         latch2 = new CountDownLatch(1);
@@ -144,7 +144,7 @@ public class IgniteServiceProxyTimeoutInitializedTest extends GridCommonAbstract
      */
     @SuppressWarnings({"ThrowableResultOfMethodCallIgnored", "Convert2Lambda"})
     public void testServiceException() throws Exception {
-        srvc = new HangServiceImpl();
+        srvcClsName = HangServiceImpl.class.getName();
 
         // Start service grid.
         startGrid(0);

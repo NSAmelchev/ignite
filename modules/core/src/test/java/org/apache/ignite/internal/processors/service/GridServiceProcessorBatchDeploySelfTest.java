@@ -585,7 +585,9 @@ public class GridServiceProcessorBatchDeploySelfTest extends GridCommonAbstractT
 
         cfgCp.setName(cfg.getName());
 
-        cfgCp.setService(cfg.getService());
+        cfgCp.setServiceClassName(cfg.getServiceClassName());
+
+        cfgCp.setServiceProperties(cfg.getServiceProperties());
 
         cfgCp.setNodeFilter(cfg.getNodeFilter());
 

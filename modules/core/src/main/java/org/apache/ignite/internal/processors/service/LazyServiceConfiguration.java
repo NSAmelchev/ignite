@@ -30,13 +30,6 @@ public class LazyServiceConfiguration extends ServiceConfiguration {
     /** */
     private static final long serialVersionUID = 0L;
 
-    /** Service instance. */
-    @GridToStringExclude
-    private transient Service srvc;
-
-    /** */
-    private String srvcClsName;
-
     /** */
     private byte[] srvcBytes;
 
@@ -52,7 +45,7 @@ public class LazyServiceConfiguration extends ServiceConfiguration {
      * @param srvcBytes Marshaller service.
      */
     public LazyServiceConfiguration(ServiceConfiguration cfg, byte[] srvcBytes) {
-        assert cfg.getService() != null : cfg;
+        assert cfg.getServiceClassName() != null : cfg;
         assert srvcBytes != null;
 
         name = cfg.getName();
@@ -62,8 +55,6 @@ public class LazyServiceConfiguration extends ServiceConfiguration {
         affKey = cfg.getAffinityKey();
         nodeFilter = cfg.getNodeFilter();
         this.srvcBytes = srvcBytes;
-        srvc = cfg.getService();
-        srvcClsName = srvc.getClass().getName();
     }
 
     /**
@@ -71,20 +62,6 @@ public class LazyServiceConfiguration extends ServiceConfiguration {
      */
     public byte[] serviceBytes() {
         return srvcBytes;
-    }
-
-    /**
-     * @return Service class name.
-     */
-    public String serviceClassName() {
-        return srvcClsName;
-    }
-
-    /** {@inheritDoc} */
-    @Override public Service getService() {
-        assert srvc != null : this;
-
-        return srvc;
     }
 
     /** {@inheritDoc} */
@@ -113,7 +90,10 @@ public class LazyServiceConfiguration extends ServiceConfiguration {
         if (name != null ? !name.equals(that.getName()) : that.getName() != null)
             return false;
 
-        if (!F.eq(srvcClsName, that.srvcClsName))
+        if (!F.eq(srvcClsName, that.getServiceClassName()))
+            return false;
+
+        if (!F.eq(prop, that.getServiceProperties()))
             return false;
 
         return true;
@@ -121,9 +101,8 @@ public class LazyServiceConfiguration extends ServiceConfiguration {
 
     /** {@inheritDoc} */
     @Override public String toString() {
-        String svcCls = srvc == null ? "" : srvc.getClass().getSimpleName();
         String nodeFilterCls = nodeFilter == null ? "" : nodeFilter.getClass().getSimpleName();
 
-        return S.toString(LazyServiceConfiguration.class, this, "svcCls", svcCls, "nodeFilterCls", nodeFilterCls);
+        return S.toString(LazyServiceConfiguration.class, this, "svcClsName", srvcClsName, "nodeFilterCls", nodeFilterCls);
     }
 }

@@ -22,7 +22,7 @@ import org.apache.ignite.Ignite;
 import org.apache.ignite.Ignition;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.processors.service.inner.MyService;
-import org.apache.ignite.internal.processors.service.inner.MyServiceFactory;
+import org.apache.ignite.internal.processors.service.inner.MyServiceHelper;
 import org.apache.ignite.spi.discovery.tcp.TcpDiscoverySpi;
 import org.apache.ignite.spi.discovery.tcp.ipfinder.TcpDiscoveryIpFinder;
 import org.apache.ignite.spi.discovery.tcp.ipfinder.vm.TcpDiscoveryVmIpFinder;
@@ -56,7 +56,7 @@ public class GridServiceProxyNodeStopSelfTest extends GridCommonAbstractTest {
     public void testProxyHashCode() throws Exception {
         Ignite server = startGrid("server");
 
-        server.services().deployClusterSingleton("my-service", MyServiceFactory.create());
+        server.services().deployClusterSingleton("my-service", MyServiceHelper.getServiceClassName(), null);
 
         Ignition.setClientMode(true);
 

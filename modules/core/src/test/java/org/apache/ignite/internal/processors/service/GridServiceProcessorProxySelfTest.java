@@ -79,7 +79,7 @@ public class GridServiceProcessorProxySelfTest extends GridServiceProcessorAbstr
 
         Ignite ignite = grid(0);
 
-        ignite.services(ignite.cluster().forRemotes()).deployNodeSingleton(name, new ErrorServiceImpl());
+        ignite.services(ignite.cluster().forRemotes()).deployNodeSingleton(name, ErrorServiceImpl.class.getName(), null);
 
         final ErrorService svc = ignite.services().serviceProxy(name, ErrorService.class, false);
 

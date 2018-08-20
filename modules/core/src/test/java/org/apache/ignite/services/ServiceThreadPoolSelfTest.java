@@ -92,7 +92,7 @@ public class ServiceThreadPoolSelfTest extends GridCommonAbstractTest {
 
         Ignite ignite = startGrid(); // Client.
 
-        ignite.services().deployClusterSingleton("my-service", new MyServiceImpl());
+        ignite.services().deployClusterSingleton("my-service", MyServiceImpl.class.getName(), null);
 
         MyService svc = ignite.services().serviceProxy("my-service", MyService.class, false);
 

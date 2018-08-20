@@ -1579,6 +1579,27 @@ public abstract class IgniteUtils {
     /**
      * Creates new instance of a class even if it does not have public constructor.
      *
+     * @param cls Class name.
+     * @return New instance of the class or {@code null} if empty constructor could not be assigned.
+     * @throws IgniteCheckedException If failed.
+     */
+    @SuppressWarnings({"unchecked"})
+    @Nullable public static <T> T forceNewInstance(String cls) throws IgniteCheckedException {
+        Class<?> cls0;
+
+        try {
+            cls0 = Class.forName(cls);
+        }
+        catch (Exception e) {
+            throw new IgniteCheckedException(e);
+        }
+
+        return (T)forceNewInstance(cls0);
+    }
+
+    /**
+     * Creates new instance of a class even if it does not have public constructor.
+     *
      * @param cls Class to instantiate.
      * @return New instance of the class or {@code null} if empty constructor could not be assigned.
      * @throws IgniteCheckedException If failed.

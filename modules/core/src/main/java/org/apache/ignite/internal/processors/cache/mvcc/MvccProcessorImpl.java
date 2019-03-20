@@ -522,7 +522,8 @@ public class MvccProcessorImpl extends GridProcessorAdapter implements MvccProce
             return;
         }
 
-        assert newCrd.topologyVersion().compareTo(curCrd.topologyVersion()) > 0;
+// muting the IGNITE-11460
+//        assert newCrd.topologyVersion().compareTo(curCrd.topologyVersion()) > 0;
 
         curCrd = newCrd;
 

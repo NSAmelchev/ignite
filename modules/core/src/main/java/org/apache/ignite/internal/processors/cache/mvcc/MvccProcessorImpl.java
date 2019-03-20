@@ -522,7 +522,7 @@ public class MvccProcessorImpl extends GridProcessorAdapter implements MvccProce
             return;
         }
 
-        assert newCrd.topologyVersion().compareTo(curCrd.topologyVersion()) > 0;
+//        assert newCrd.topologyVersion().compareTo(curCrd.topologyVersion()) > 0;
 
         curCrd = newCrd;
 

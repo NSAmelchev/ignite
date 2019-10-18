@@ -53,8 +53,6 @@ import org.apache.ignite.internal.processors.affinity.AffinityTopologyVersion;
 import org.apache.ignite.internal.processors.cluster.ChangeGlobalStateFinishMessage;
 import org.apache.ignite.internal.processors.cluster.ChangeGlobalStateMessage;
 import org.apache.ignite.internal.processors.cluster.DiscoveryDataClusterState;
-import org.apache.ignite.spi.systemview.view.CacheGroupView;
-import org.apache.ignite.spi.systemview.view.CacheView;
 import org.apache.ignite.internal.processors.query.QuerySchema;
 import org.apache.ignite.internal.processors.query.QuerySchemaPatch;
 import org.apache.ignite.internal.processors.query.QueryUtils;
@@ -72,6 +70,8 @@ import org.apache.ignite.plugin.CachePluginContext;
 import org.apache.ignite.plugin.CachePluginProvider;
 import org.apache.ignite.plugin.PluginProvider;
 import org.apache.ignite.spi.discovery.DiscoveryDataBag;
+import org.apache.ignite.spi.systemview.view.CacheGroupView;
+import org.apache.ignite.spi.systemview.view.CacheView;
 import org.jetbrains.annotations.Nullable;
 
 import static org.apache.ignite.cache.CacheAtomicityMode.TRANSACTIONAL_SNAPSHOT;
@@ -959,6 +959,19 @@ public class ClusterCachesInfo {
         }
 
         CacheConfiguration<?, ?> ccfg = req.startCacheConfiguration();
+
+        if (ccfg.isEncryptionEnabled() && !ctx.encryption().checkGroupKey(req.encryptionKey())) {
+            IgniteCheckedException error = new IgniteCheckedException("Failed to start cache. (Bad group key)");
+
+            U.warn(log, "Ignore cache start request. " + error);
+
+            if (persistedCfgs)
+                res.errs.add(error);
+            else
+                ctx.cache().completeCacheStartFuture(req, false, error);
+
+            return false;
+        }
 
         assert req.cacheType() != null : req;
         assert F.eq(ccfg.getName(), cacheName) : req;

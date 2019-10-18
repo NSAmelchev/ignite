@@ -532,6 +532,23 @@ public class GridEncryptionManager extends GridManagerAdapter<EncryptionSpi> imp
         groupKey(grpId, encKey);
     }
 
+    /** {@code True} if group key is correct. */
+    public boolean checkGroupKey(@Nullable byte[] encGrpKey) {
+        log.info("Checking group key. [node=" + ctx.igniteInstanceName() +
+            ", threadName="+Thread.currentThread().getName() + ']');
+
+        if (encGrpKey == null || ctx.clientNode())
+            return true;
+
+        try {
+            getSpi().decryptKey(encGrpKey);
+        } catch (Exception e) {
+            return false;
+        }
+
+        return true;
+    }
+
     /**
      * Callback for cache group destroy event.
      * @param grpId Group id.

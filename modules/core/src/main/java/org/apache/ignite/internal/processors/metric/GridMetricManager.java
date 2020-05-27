@@ -49,6 +49,8 @@ import org.apache.ignite.internal.processors.metric.impl.DoubleMetricImpl;
 import org.apache.ignite.internal.processors.metric.impl.HistogramMetricImpl;
 import org.apache.ignite.internal.processors.metric.impl.HitRateMetric;
 import org.apache.ignite.internal.processors.timeout.GridTimeoutProcessor;
+import org.apache.ignite.internal.profiling.IgniteProfiling;
+import org.apache.ignite.internal.profiling.LogFileProfiling;
 import org.apache.ignite.internal.util.StripedExecutor;
 import org.apache.ignite.internal.util.future.GridCompoundFuture;
 import org.apache.ignite.internal.util.typedef.T2;
@@ -58,8 +60,8 @@ import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.spi.metric.HistogramMetric;
 import org.apache.ignite.spi.metric.Metric;
 import org.apache.ignite.spi.metric.MetricExporterSpi;
-import org.apache.ignite.spi.metric.ReadOnlyMetricRegistry;
 import org.apache.ignite.spi.metric.ReadOnlyMetricManager;
+import org.apache.ignite.spi.metric.ReadOnlyMetricRegistry;
 import org.apache.ignite.thread.IgniteStripedThreadPoolExecutor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -234,6 +236,9 @@ public class GridMetricManager extends GridManagerAdapter<MetricExporterSpi> imp
     /** Nonheap memory metrics. */
     private final MemoryUsageMetrics nonHeap;
 
+    /** Profiling. */
+    private final LogFileProfiling profiling;
+
     /**
      * @param ctx Kernal context.
      */
@@ -271,6 +276,8 @@ public class GridMetricManager extends GridManagerAdapter<MetricExporterSpi> imp
 
         pmeReg.histogram(PME_OPS_BLOCKED_DURATION_HISTOGRAM, pmeBounds,
             "Histogram of cache operations blocked PME durations in milliseconds.");
+
+        profiling = new LogFileProfiling(ctx);
     }
 
     /** {@inheritDoc} */
@@ -324,6 +331,9 @@ public class GridMetricManager extends GridManagerAdapter<MetricExporterSpi> imp
 
         // Stop discovery worker and metrics updater.
         U.closeQuiet(metricsUpdateTask);
+
+        if (profilingEnabled())
+            stopProfiling();
     }
 
     /**
@@ -745,6 +755,37 @@ public class GridMetricManager extends GridManagerAdapter<MetricExporterSpi> imp
         catch (IllegalArgumentException ignored) {
             return new MemoryUsage(0, 0, 0, 0);
         }
+    }
+
+    /**
+     * Starts profiling.
+     *
+     * @param maxFileSize Maximum file size in bytes.
+     * @param bufferSize Off heap buffer size in bytes.
+     * @param flushBatchSize Minimal batch size to flush in bytes.
+     */
+    public void startProfiling(long maxFileSize, int bufferSize, int flushBatchSize) {
+        profiling.startProfiling(maxFileSize, bufferSize, flushBatchSize);
+    }
+
+    /** Stops profiling. */
+    public void stopProfiling() {
+        try {
+            profiling.stopProfiling().get();
+        }
+        catch (IgniteCheckedException e) {
+            throw U.convertException(e);
+        }
+    }
+
+    /** @return {@code True} if profiling enabled. */
+    public boolean profilingEnabled() {
+        return profiling.profilingEnabled();
+    }
+
+    /** @return Profiling. */
+    public IgniteProfiling profiling() {
+        return profiling;
     }
 
     /**

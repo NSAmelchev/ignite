@@ -1618,8 +1618,11 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
 
             // 12. Update metrics.
             if (!tx.dht() && tx.local()) {
-                if (!tx.system())
+                if (!tx.system()) {
                     cctx.txMetrics().onTxCommit();
+
+                    profile(tx, true);
+                }
 
                 tx.txState().onTxEnd(cctx, tx, true);
             }
@@ -1687,8 +1690,11 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
 
             // 10. Update metrics.
             if (!tx.dht() && tx.local()) {
-                if (!tx.system())
+                if (!tx.system()) {
                     cctx.txMetrics().onTxRollback();
+
+                    profile(tx, false);
+                }
 
                 tx.txState().onTxEnd(cctx, tx, false);
             }
@@ -1741,6 +1747,8 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
                         cctx.txMetrics().onTxCommit();
                     else
                         cctx.txMetrics().onTxRollback();
+
+                    profile(tx, commit);
                 }
 
                 tx.txState().onTxEnd(cctx, tx, commit);
@@ -2967,6 +2975,23 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
         IgniteCompute compute = cctx.kernalContext().grid().compute(grp);
 
         compute.broadcast(job);
+    }
+
+    /**
+     * Profiles transaction.
+     *
+     * @param tx Transaction.
+     * @param commit {@code True} if transaction commited.
+     */
+    private void profile(IgniteInternalTx tx, boolean commit) {
+        if (!cctx.kernalContext().metric().profilingEnabled() || tx.startTimeNanos() == 0)
+            return;
+
+        cctx.kernalContext().metric().profiling().transaction(
+            tx.txState().cacheIds(),
+            tx.startTime(),
+            System.nanoTime() - tx.startTimeNanos(),
+            commit);
     }
 
     /**

@@ -43,10 +43,13 @@ import org.apache.ignite.events.CacheQueryExecutedEvent;
 import org.apache.ignite.events.DiscoveryEvent;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.GridTopic;
+import org.apache.ignite.internal.metric.IoStatisticsHolderQuery;
+import org.apache.ignite.internal.metric.IoStatisticsQueryHelper;
 import org.apache.ignite.internal.processors.affinity.AffinityTopologyVersion;
 import org.apache.ignite.internal.processors.cache.GridCacheContext;
 import org.apache.ignite.internal.processors.cache.mvcc.MvccSnapshot;
 import org.apache.ignite.internal.processors.cache.query.CacheQueryType;
+import org.apache.ignite.internal.processors.cache.query.GridCacheQueryType;
 import org.apache.ignite.internal.processors.cache.query.GridCacheSqlQuery;
 import org.apache.ignite.internal.processors.query.GridQueryCancel;
 import org.apache.ignite.internal.processors.query.h2.H2PooledConnection;
@@ -298,6 +301,11 @@ public class GridMapQueryExecutor {
         @Nullable final MvccSnapshot mvccSnapshot,
         Boolean dataPageScanEnabled
     ) {
+        boolean profilingEnabled = ctx.metric().profilingEnabled();
+
+        if (profilingEnabled)
+            IoStatisticsQueryHelper.startGatheringQueryStatistics();
+
         // Prepare to run queries.
         GridCacheContext<?, ?> mainCctx = mainCacheContext(cacheIds);
 
@@ -520,6 +528,19 @@ public class GridMapQueryExecutor {
         finally {
             if (reserved != null)
                 reserved.release();
+
+            if (profilingEnabled) {
+                IoStatisticsHolderQuery stat = IoStatisticsQueryHelper.finishGatheringQueryStatistics();
+
+                if (stat.logicalReads() > 0 || stat.physicalReads() > 0) {
+                    ctx.metric().profiling().queryReads(
+                        GridCacheQueryType.SQL_FIELDS,
+                        node.id(),
+                        reqId,
+                        stat.logicalReads(),
+                        stat.physicalReads());
+                }
+            }
         }
     }
 

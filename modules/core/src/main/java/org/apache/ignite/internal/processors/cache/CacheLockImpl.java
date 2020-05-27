@@ -25,7 +25,10 @@ import javax.cache.CacheException;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.internal.IgniteInternalFuture;
 import org.apache.ignite.internal.IgniteInterruptedCheckedException;
+import org.apache.ignite.internal.processors.metric.GridMetricManager;
+import org.apache.ignite.internal.profiling.IgniteProfiling;
 import org.apache.ignite.internal.util.typedef.internal.S;
+import org.apache.ignite.internal.util.typedef.internal.U;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -49,6 +52,9 @@ class CacheLockImpl<K, V> implements Lock {
 
     /** */
     private volatile Thread lockedThread;
+
+    /** Lock start time in nanoseconds. */
+    private volatile long startTime;
 
     /**
      * @param gate Gate.
@@ -92,6 +98,9 @@ class CacheLockImpl<K, V> implements Lock {
         cntr++;
 
         lockedThread = Thread.currentThread();
+
+        if (startTime == 0)
+            startTime = System.nanoTime();
     }
 
     /** {@inheritDoc} */
@@ -186,8 +195,20 @@ class CacheLockImpl<K, V> implements Lock {
 
             cntr--;
 
-            if (cntr == 0)
+            if (cntr == 0) {
+                GridMetricManager metric = delegate.context().kernalContext().metric();
+
+                if (metric.profilingEnabled()) {
+                    metric.profiling().cacheOperation(IgniteProfiling.CacheOperationType.LOCK,
+                        delegate.context().cacheId(),
+                        U.currentTimeMillis(),
+                        System.nanoTime() - startTime);
+                }
+
+                startTime = 0;
+
                 lockedThread = null;
+            }
 
             delegate.unlockAll(keys);
         }

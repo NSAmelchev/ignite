@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.cluster.ClusterNode;
@@ -35,6 +36,8 @@ import org.apache.ignite.internal.IgniteInterruptedCheckedException;
 import org.apache.ignite.internal.cluster.ClusterTopologyCheckedException;
 import org.apache.ignite.internal.managers.communication.GridIoPolicy;
 import org.apache.ignite.internal.managers.eventstorage.GridLocalEventListener;
+import org.apache.ignite.internal.metric.IoStatisticsHolderQuery;
+import org.apache.ignite.internal.metric.IoStatisticsQueryHelper;
 import org.apache.ignite.internal.processors.cache.mvcc.MvccSnapshot;
 import org.apache.ignite.internal.processors.query.GridQueryFieldMetadata;
 import org.apache.ignite.internal.util.GridBoundedConcurrentOrderedSet;
@@ -51,12 +54,12 @@ import org.apache.ignite.lang.IgniteClosure;
 import org.apache.ignite.lang.IgniteFuture;
 import org.apache.ignite.lang.IgniteReducer;
 import org.jetbrains.annotations.Nullable;
-import java.util.concurrent.ConcurrentHashMap;
 
 import static org.apache.ignite.cache.CacheMode.LOCAL;
 import static org.apache.ignite.events.EventType.EVT_NODE_FAILED;
 import static org.apache.ignite.events.EventType.EVT_NODE_LEFT;
 import static org.apache.ignite.internal.GridTopic.TOPIC_CACHE;
+import static org.apache.ignite.internal.processors.cache.query.GridCacheQueryType.SCAN;
 
 /**
  * Distributed query manager (for cache in REPLICATED / PARTITIONED cache mode).
@@ -198,52 +201,72 @@ public class GridCacheDistributedQueryManager<K, V> extends GridCacheQueryManage
         assert req.mvccSnapshot() != null || !cctx.mvccEnabled() || req.cancel() ||
             (req.type() == null && !req.fields()) : req; // Last assertion means next page request.
 
-        if (req.cancel()) {
-            cancelIds.add(new CancelMessageId(req.id(), sndId));
+        boolean profilingEnabled = cctx.kernalContext().metric().profilingEnabled();
 
-            if (req.fields())
-                removeFieldsQueryResult(sndId, req.id());
-            else
-                removeQueryResult(sndId, req.id());
-        }
-        else {
-            if (!cancelIds.contains(new CancelMessageId(req.id(), sndId))) {
-                if (!F.eq(req.cacheName(), cctx.name())) {
-                    GridCacheQueryResponse res = new GridCacheQueryResponse(
-                        cctx.cacheId(),
-                        req.id(),
-                        new IgniteCheckedException("Received request for incorrect cache [expected=" + cctx.name() +
-                            ", actual=" + req.cacheName()),
-                        cctx.deploymentEnabled());
+        if (profilingEnabled)
+            IoStatisticsQueryHelper.startGatheringQueryStatistics();
 
-                    sendQueryResponse(sndId, res, 0);
+        try {
+            if (req.cancel()) {
+                cancelIds.add(new CancelMessageId(req.id(), sndId));
+
+                if (req.fields())
+                    removeFieldsQueryResult(sndId, req.id());
+                else
+                    removeQueryResult(sndId, req.id());
+            }
+            else {
+                if (!cancelIds.contains(new CancelMessageId(req.id(), sndId))) {
+                    if (!F.eq(req.cacheName(), cctx.name())) {
+                        GridCacheQueryResponse res = new GridCacheQueryResponse(
+                            cctx.cacheId(),
+                            req.id(),
+                            new IgniteCheckedException("Received request for incorrect cache [expected=" + cctx.name() +
+                                ", actual=" + req.cacheName()),
+                            cctx.deploymentEnabled());
+
+                        sendQueryResponse(sndId, res, 0);
+                    }
+                    else {
+                        threads.put(req.id(), Thread.currentThread());
+
+                        try {
+                            GridCacheQueryInfo info = distributedQueryInfo(sndId, req);
+
+                            if (info == null)
+                                return;
+
+                            if (req.fields())
+                                runFieldsQuery(info);
+                            else
+                                runQuery(info);
+                        }
+                        catch (Throwable e) {
+                            U.error(log(), "Failed to run query.", e);
+
+                            sendQueryResponse(sndId, new GridCacheQueryResponse(cctx.cacheId(), req.id(), e.getCause(),
+                                cctx.deploymentEnabled()), 0);
+
+                            if (e instanceof Error)
+                                throw (Error)e;
+                        }
+                        finally {
+                            threads.remove(req.id());
+                        }
+                    }
                 }
-                else {
-                    threads.put(req.id(), Thread.currentThread());
+            }
+        } finally {
+            if (profilingEnabled) {
+                IoStatisticsHolderQuery stat = IoStatisticsQueryHelper.finishGatheringQueryStatistics();
 
-                    try {
-                        GridCacheQueryInfo info = distributedQueryInfo(sndId, req);
-
-                        if (info == null)
-                            return;
-
-                        if (req.fields())
-                            runFieldsQuery(info);
-                        else
-                            runQuery(info);
-                    }
-                    catch (Throwable e) {
-                        U.error(log(), "Failed to run query.", e);
-
-                        sendQueryResponse(sndId, new GridCacheQueryResponse(cctx.cacheId(), req.id(), e.getCause(),
-                            cctx.deploymentEnabled()), 0);
-
-                        if (e instanceof Error)
-                            throw (Error)e;
-                    }
-                    finally {
-                        threads.remove(req.id());
-                    }
+                if (stat.logicalReads() > 0 || stat.physicalReads() > 0) {
+                    cctx.kernalContext().metric().profiling().queryReads(
+                        req.type(),
+                        sndId,
+                        req.id(),
+                        stat.logicalReads(),
+                        stat.physicalReads());
                 }
             }
         }
@@ -594,6 +617,11 @@ public class GridCacheDistributedQueryManager<K, V> extends GridCacheQueryManage
         assert qry.type() == GridCacheQueryType.SCAN : qry;
         assert qry.mvccSnapshot() != null || !cctx.mvccEnabled();
 
+        boolean profilingEnabled = cctx.kernalContext().metric().profilingEnabled();
+
+        long startTime = profilingEnabled ? System.currentTimeMillis() : 0;
+        long startTimeNanos = profilingEnabled ? System.nanoTime() : 0;
+
         GridCloseableIterator locIter0 = null;
 
         for (ClusterNode node : nodes) {
@@ -666,6 +694,16 @@ public class GridCacheDistributedQueryManager<K, V> extends GridCacheQueryManage
 
                 if (fut != null)
                     fut.cancel();
+
+                if (profilingEnabled) {
+                    cctx.kernalContext().metric().profiling().query(
+                        SCAN,
+                        cctx.name(),
+                        ((GridCacheDistributedQueryFuture)fut).requestId(),
+                        startTime,
+                        System.nanoTime() - startTimeNanos,
+                        true);
+                }
             }
         };
     }

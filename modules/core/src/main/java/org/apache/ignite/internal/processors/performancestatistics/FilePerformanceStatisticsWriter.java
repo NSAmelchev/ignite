@@ -330,24 +330,6 @@ public class FilePerformanceStatisticsWriter {
         }
     }
 
-    /**
-     * @param buf Buffer to write to.
-     * @param str String to write.
-     * @param cached {@code True} if string cached.
-     */
-    private void writeString(ByteBuffer buf, String str, boolean cached) {
-        buf.put(cached ? (byte)1 : 0);
-
-        if (cached)
-            buf.putInt(str.hashCode());
-        else {
-            byte[] bytes = str.getBytes();
-
-            buf.putInt(bytes.length);
-            buf.put(bytes);
-        }
-    }
-
     /** @return Performance statistics file. */
     static File statisticsFile(GridKernalContext ctx) throws IgniteCheckedException {
         String igniteWorkDir = U.workDirectory(ctx.config().getWorkDirectory(), ctx.config().getIgniteHome());
@@ -368,6 +350,24 @@ public class FilePerformanceStatisticsWriter {
         buf.putLong(uuid.globalId().getMostSignificantBits());
         buf.putLong(uuid.globalId().getLeastSignificantBits());
         buf.putLong(uuid.localId());
+    }
+
+    /**
+     * @param buf Buffer to write to.
+     * @param str String to write.
+     * @param cached {@code True} if string cached.
+     */
+    private void writeString(ByteBuffer buf, String str, boolean cached) {
+        buf.put(cached ? (byte)1 : 0);
+
+        if (cached)
+            buf.putInt(str.hashCode());
+        else {
+            byte[] bytes = str.getBytes();
+
+            buf.putInt(bytes.length);
+            buf.put(bytes);
+        }
     }
 
     /** @return {@code True} if string was cached and can be written as hashcode. */

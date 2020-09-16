@@ -218,7 +218,7 @@ public class FilePerformanceStatisticsWriter {
      * @param success Success flag.
      */
     public void query(GridCacheQueryType type, String text, long id, long startTime, long duration, boolean success) {
-        boolean cached = stringCached(text);
+        boolean cached = cacheIfPossible(text);
 
         doWrite(QUERY, queryRecordSize(cached ? 0 : text.getBytes().length, cached), buf -> {
             writeString(buf, text, cached);
@@ -255,7 +255,7 @@ public class FilePerformanceStatisticsWriter {
      * @param affPartId Affinity partition id.
      */
     public void task(IgniteUuid sesId, String taskName, long startTime, long duration, int affPartId) {
-        boolean cached = stringCached(taskName);
+        boolean cached = cacheIfPossible(taskName);
 
         doWrite(TASK, taskRecordSize(cached ? 0 : taskName.getBytes().length, cached), buf -> {
             writeString(buf, taskName, cached);
@@ -330,24 +330,6 @@ public class FilePerformanceStatisticsWriter {
         }
     }
 
-    /** @return {@code True} if string was cached and can be written as hashcode. */
-    private boolean stringCached(String str) {
-        if (cachedStrings.contains(str.hashCode()))
-            return true;
-
-        int cnt = cachedCnt.getAndUpdate(val -> val < DFLT_MAX_CACHED_STRINGS_COUNT ? val + 1 : val);
-
-        if (cnt < DFLT_MAX_CACHED_STRINGS_COUNT) {
-            if (!cachedStrings.add(str.hashCode())) {
-                cachedCnt.decrementAndGet();
-
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /**
      * @param buf Buffer to write to.
      * @param str String to write.
@@ -386,6 +368,24 @@ public class FilePerformanceStatisticsWriter {
         buf.putLong(uuid.globalId().getMostSignificantBits());
         buf.putLong(uuid.globalId().getLeastSignificantBits());
         buf.putLong(uuid.localId());
+    }
+
+    /** @return {@code True} if string was cached and can be written as hashcode. */
+    private boolean cacheIfPossible(String str) {
+        if (cachedStrings.contains(str.hashCode()))
+            return true;
+
+        int cnt = cachedCnt.getAndUpdate(val -> val < DFLT_MAX_CACHED_STRINGS_COUNT ? val + 1 : val);
+
+        if (cnt < DFLT_MAX_CACHED_STRINGS_COUNT) {
+            if (!cachedStrings.add(str.hashCode())) {
+                cachedCnt.decrementAndGet();
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Worker to write to performance statistics file. */

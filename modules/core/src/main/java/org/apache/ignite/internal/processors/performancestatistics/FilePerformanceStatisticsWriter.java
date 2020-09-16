@@ -338,8 +338,11 @@ public class FilePerformanceStatisticsWriter {
         int cnt = cachedCnt.getAndUpdate(val -> val < DFLT_MAX_CACHED_STRINGS_COUNT ? val + 1 : val);
 
         if (cnt < DFLT_MAX_CACHED_STRINGS_COUNT) {
-            if (!cachedStrings.add(str.hashCode()))
+            if (!cachedStrings.add(str.hashCode())) {
                 cachedCnt.decrementAndGet();
+
+                return true;
+            }
         }
 
         return false;

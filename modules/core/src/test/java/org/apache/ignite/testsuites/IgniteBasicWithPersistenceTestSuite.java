@@ -41,6 +41,7 @@ import org.apache.ignite.internal.processors.cache.persistence.snapshot.IgniteSn
 import org.apache.ignite.internal.processors.cache.persistence.snapshot.IgniteSnapshotManagerSelfTest;
 import org.apache.ignite.internal.processors.performancestatistics.PerformanceStatisticsSelfTest;
 import org.apache.ignite.internal.processors.performancestatistics.PerformanceStatisticsThinClientTest;
+import org.apache.ignite.internal.processors.performancestatistics.StringCacheTest;
 import org.apache.ignite.internal.processors.performancestatistics.TopologyChangesTest;
 import org.apache.ignite.marshaller.GridMarshallerMappingConsistencyTest;
 import org.apache.ignite.util.GridInternalTaskUnusedWalSegmentsTest;
@@ -87,7 +88,8 @@ import org.junit.runners.Suite;
 
     PerformanceStatisticsSelfTest.class,
     PerformanceStatisticsThinClientTest.class,
-    TopologyChangesTest.class
+    TopologyChangesTest.class,
+    StringCacheTest.class
 })
 public class IgniteBasicWithPersistenceTestSuite {
 }

@@ -27,8 +27,10 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -81,6 +83,9 @@ public class FilePerformanceStatisticsReader {
     /** Handlers to process deserialized operations. */
     private final PerformanceStatisticsHandler[] handlers;
 
+    /** Cached strings by hashcodes. */
+    private final Map<Integer, String> strings = new HashMap<>();
+
     /** @param handlers Handlers to process deserialized operations. */
     public FilePerformanceStatisticsReader(PerformanceStatisticsHandler... handlers) {
         A.notEmpty(handlers, "At least one handler expected.");
@@ -125,6 +130,8 @@ public class FilePerformanceStatisticsReader {
                     buf.compact();
                 }
             }
+
+            strings.clear();
         }
     }
 
@@ -177,20 +184,46 @@ public class FilePerformanceStatisticsReader {
             return true;
         }
         else if (opType == QUERY) {
-            if (buf.remaining() < 4)
+            if (buf.remaining() < 1)
                 return false;
 
-            int textLen = buf.getInt();
+            boolean cached = buf.get() != 0;
 
-            if (buf.remaining() < queryRecordSize(textLen) - 4)
-                return false;
+            String text;
 
-            String text = readString(buf, textLen);
+            if (cached) {
+                if (buf.remaining() < 4)
+                    return false;
+
+                int hashcode = buf.getInt();
+
+                text = strings.get(hashcode);
+
+                if (buf.remaining() < queryRecordSize(0, true) - 1 - 4)
+                    return false;
+            }
+            else {
+                if (buf.remaining() < 4)
+                    return false;
+
+                int textLen = buf.getInt();
+
+                if (buf.remaining() < queryRecordSize(textLen, false) - 1 - 4)
+                    return false;
+
+                text = readString(buf, textLen);
+
+                strings.put(text.hashCode(), text);
+            }
+
             GridCacheQueryType queryType = GridCacheQueryType.fromOrdinal(buf.get());
             long id = buf.getLong();
             long startTime = buf.getLong();
             long duration = buf.getLong();
             boolean success = buf.get() != 0;
+
+            if (text == null)
+                return true;
 
             for (PerformanceStatisticsHandler handler : handlers)
                 handler.query(nodeId, queryType, text, id, startTime, duration, success);
@@ -213,19 +246,45 @@ public class FilePerformanceStatisticsReader {
             return true;
         }
         else if (opType == TASK) {
-            if (buf.remaining() < 4)
+            if (buf.remaining() < 1)
                 return false;
 
-            int nameLen = buf.getInt();
+            boolean cached = buf.get() != 0;
 
-            if (buf.remaining() < taskRecordSize(nameLen) - 4)
-                return false;
+            String taskName;
 
-            String taskName = readString(buf, nameLen);
+            if (cached) {
+                if (buf.remaining() < 4)
+                    return false;
+
+                int hashcode = buf.getInt();
+
+                taskName = strings.get(hashcode);
+
+                if (buf.remaining() < taskRecordSize(0, true) - 1 - 4)
+                    return false;
+            }
+            else {
+                if (buf.remaining() < 4)
+                    return false;
+
+                int nameLen = buf.getInt();
+
+                if (buf.remaining() < taskRecordSize(nameLen, false) - 1 - 4)
+                    return false;
+
+                taskName = readString(buf, nameLen);
+
+                strings.put(taskName.hashCode(), taskName);
+            }
+
             IgniteUuid sesId = readIgniteUuid(buf);
             long startTime = buf.getLong();
             long duration = buf.getLong();
             int affPartId = buf.getInt();
+
+            if (taskName == null)
+                return true;
 
             for (PerformanceStatisticsHandler handler : handlers)
                 handler.task(nodeId, sesId, taskName, startTime, duration, affPartId);

@@ -114,10 +114,10 @@ public class FilePerformanceStatisticsWriter {
     private final IgniteLogger log;
 
     /** Hashcodes of cached strings. */
-    private final Set<Integer> cachedStrings = new GridConcurrentHashSet<>();
+    private final Set<Integer> knownStrs = new GridConcurrentHashSet<>();
 
     /** Count of cached strings. */
-    private final AtomicInteger cachedCnt = new AtomicInteger();
+    private final AtomicInteger knownStrsCnt = new AtomicInteger();
 
     /** @param ctx Kernal context. */
     public FilePerformanceStatisticsWriter(GridKernalContext ctx) throws IgniteCheckedException, IOException {
@@ -170,7 +170,7 @@ public class FilePerformanceStatisticsWriter {
 
         U.closeQuiet(fileIo);
 
-        cachedStrings.clear();
+        knownStrs.clear();
 
         started = false;
     }
@@ -372,14 +372,14 @@ public class FilePerformanceStatisticsWriter {
 
     /** @return {@code True} if string was cached and can be written as hashcode. */
     private boolean cacheIfPossible(String str) {
-        if (cachedStrings.contains(str.hashCode()))
+        if (knownStrs.contains(str.hashCode()))
             return true;
 
-        int cnt = cachedCnt.getAndUpdate(val -> val < DFLT_MAX_CACHED_STRINGS_COUNT ? val + 1 : val);
+        int cnt = knownStrsCnt.getAndUpdate(val -> val < DFLT_MAX_CACHED_STRINGS_COUNT ? val + 1 : val);
 
         if (cnt < DFLT_MAX_CACHED_STRINGS_COUNT) {
-            if (!cachedStrings.add(str.hashCode())) {
-                cachedCnt.decrementAndGet();
+            if (!knownStrs.add(str.hashCode())) {
+                knownStrsCnt.decrementAndGet();
 
                 return true;
             }

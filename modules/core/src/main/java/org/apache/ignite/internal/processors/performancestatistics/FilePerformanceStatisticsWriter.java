@@ -375,9 +375,11 @@ public class FilePerformanceStatisticsWriter {
         if (knownStrsSz >= DFLT_CACHED_STRINGS_THRESHOLD)
             return false;
 
+        int hash = str.hashCode();
+
         // We can cache slightly more strings then threshold value.
         // Don't implement solution with synchronization here, because our primary goal is avoid any contention.
-        if (!knownStrs.add(str.hashCode()))
+        if (knownStrs.contains(hash) || !knownStrs.add(hash))
             return true;
 
         knownStrsSz = knownStrs.size();

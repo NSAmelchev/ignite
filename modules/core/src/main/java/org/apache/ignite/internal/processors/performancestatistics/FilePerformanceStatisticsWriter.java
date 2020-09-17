@@ -80,8 +80,8 @@ public class FilePerformanceStatisticsWriter {
     /** Default minimal batch size to flush in bytes. */
     public static final int DFLT_FLUSH_SIZE = (int)(8 * U.MB);
 
-    /** Default maximum cached strings count. */
-    public static final int DFLT_MAX_CACHED_STRINGS_COUNT = 1024;
+    /** Default maximum cached strings threshold. String caching will stop on threshold excess. */
+    public static final int DFLT_CACHED_STRINGS_THRESHOLD = 1024;
 
     /** File writer thread name. */
     static final String WRITER_THREAD_NAME = "performance-statistics-writer";
@@ -117,7 +117,7 @@ public class FilePerformanceStatisticsWriter {
     private final Set<Integer> knownStrs = new GridConcurrentHashSet<>();
 
     /** Count of cached strings. */
-    private final AtomicInteger knownStrsCnt = new AtomicInteger();
+    private volatile int knownStrsSz;
 
     /** @param ctx Kernal context. */
     public FilePerformanceStatisticsWriter(GridKernalContext ctx) throws IgniteCheckedException, IOException {
@@ -372,18 +372,15 @@ public class FilePerformanceStatisticsWriter {
 
     /** @return {@code True} if string was cached and can be written as hashcode. */
     private boolean cacheIfPossible(String str) {
-        if (knownStrs.contains(str.hashCode()))
+        if (knownStrsSz >= DFLT_CACHED_STRINGS_THRESHOLD)
+            return false;
+
+        // We can cache slightly more string then threshold value.
+        // Don't implement solution with synchronization here, because our primary goal is avoid any contention.
+        if (!knownStrs.add(str.hashCode()))
             return true;
 
-        int cnt = knownStrsCnt.getAndUpdate(val -> val < DFLT_MAX_CACHED_STRINGS_COUNT ? val + 1 : val);
-
-        if (cnt < DFLT_MAX_CACHED_STRINGS_COUNT) {
-            if (!knownStrs.add(str.hashCode())) {
-                knownStrsCnt.decrementAndGet();
-
-                return true;
-            }
-        }
+        knownStrsSz = knownStrs.size();
 
         return false;
     }

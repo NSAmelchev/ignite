@@ -17,7 +17,6 @@
 
 package org.apache.ignite.internal.processors.performancestatistics;
 
-import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.internal.IgniteEx;
@@ -27,7 +26,6 @@ import org.junit.Test;
 
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.jobRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.taskRecordSize;
-import static org.apache.ignite.testframework.GridTestUtils.randomString;
 
 /**
  * Tests strings caching.
@@ -38,8 +36,8 @@ public class StringCacheTest extends AbstractPerformanceStatisticsTest {
     public void testCacheTaskName() throws Exception {
         IgniteEx ignite = startGrid(0);
 
-        String testTaskName = "TestTask-" + randomString(new Random(), 1024);
-        int executions = 100;
+        String testTaskName = "TestTask";
+        int executions = 5;
 
         startCollectStatistics();
 
@@ -63,9 +61,13 @@ public class StringCacheTest extends AbstractPerformanceStatisticsTest {
 
         assertEquals(executions, tasks.get());
 
-        long statLen = FilePerformanceStatisticsWriter.statisticsFile(ignite.context()).length();
+        long expLen = taskRecordSize(testTaskName.getBytes().length, false) +
+            taskRecordSize(0, true) * (executions - 1) +
+            jobRecordSize() * executions +
+            /*opType*/ 2 * executions;
 
-        assertTrue(statLen >= (taskRecordSize(0, true) + jobRecordSize()) * executions);
-        assertTrue(statLen < (taskRecordSize(testTaskName.getBytes().length, false) + jobRecordSize()) * executions);
+        long statFileLen = FilePerformanceStatisticsWriter.statisticsFile(ignite.context()).length();
+
+        assertEquals(expLen, statFileLen);
     }
 }

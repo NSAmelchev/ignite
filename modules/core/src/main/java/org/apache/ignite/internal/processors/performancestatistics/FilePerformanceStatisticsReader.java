@@ -280,15 +280,7 @@ public class FilePerformanceStatisticsReader {
                 if (buf.remaining() < 4)
                     return false;
 
-                int hash = buf.getInt();
-
-                taskName = knownStrs.get(hash);
-
-                if (taskName == null && strFindMode == null)
-                    strFindMode = new UnknownStringInfo(curRecPos, hash);
-
-                if (buf.remaining() < taskRecordSize(0, true) - 1 - 4)
-                    return false;
+                taskName = readCachedString(buf);
             }
             else {
                 if (buf.remaining() < 4)
@@ -300,11 +292,6 @@ public class FilePerformanceStatisticsReader {
                     return false;
 
                 taskName = readString(buf, nameLen);
-
-                knownStrs.put(taskName.hashCode(), taskName);
-
-                if (strFindMode != null && strFindMode.hash == taskName.hashCode())
-                    strFindMode.found = true;
             }
 
             IgniteUuid sesId = readIgniteUuid(buf);
@@ -381,13 +368,32 @@ public class FilePerformanceStatisticsReader {
         return null;
     }
 
+    /** */
+    private String readCachedString(ByteBuffer buf) {
+        int hash = buf.getInt();
+
+        String str = knownStrs.get(hash);
+
+        if (str == null && strFindMode == null)
+            strFindMode = new UnknownStringInfo(curRecPos, hash);
+
+        return str;
+    }
+
     /** Reads string from byte buffer. */
-    private static String readString(ByteBuffer buf, int size) {
+    private String readString(ByteBuffer buf, int size) {
         byte[] bytes = new byte[size];
 
         buf.get(bytes);
 
-        return new String(bytes);
+        String str = new String(bytes);
+
+        knownStrs.put(str.hashCode(), str);
+
+        if (strFindMode != null && strFindMode.hash == str.hashCode())
+            strFindMode.found = true;
+
+        return str;
     }
 
     /** Reads {@link UUID} from buffer. */

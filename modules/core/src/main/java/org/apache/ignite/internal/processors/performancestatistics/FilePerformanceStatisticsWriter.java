@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteLogger;
+import org.apache.ignite.IgniteSystemProperties;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.IgniteInterruptedCheckedException;
 import org.apache.ignite.internal.processors.cache.persistence.file.FileIO;
@@ -45,6 +46,10 @@ import org.apache.ignite.internal.util.worker.GridWorker;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.thread.IgniteThread;
 
+import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_BUFFER_SIZE;
+import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_CACHED_STRINGS_THRESHOLD;
+import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_FILE_MAX_SIZE;
+import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_FLUSH_SIZE;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.JOB;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY_READS;
@@ -85,6 +90,14 @@ public class FilePerformanceStatisticsWriter {
 
     /** File writer thread name. */
     static final String WRITER_THREAD_NAME = "performance-statistics-writer";
+
+    /** Minimal batch size to flush in bytes. */
+    private final int flushSize =
+        IgniteSystemProperties.getInteger(IGNITE_PERF_STAT_FLUSH_SIZE, DFLT_FLUSH_SIZE);
+
+    /** Maximum cached strings threshold. String caching will stop on threshold excess. */
+    private final int cachedStrsThreshold =
+        IgniteSystemProperties.getInteger(IGNITE_PERF_STAT_CACHED_STRINGS_THRESHOLD, DFLT_CACHED_STRINGS_THRESHOLD);
 
     /** Factory to provide I/O interface. */
     private final FileIOFactory fileIoFactory = new RandomAccessFileIOFactory();
@@ -131,8 +144,10 @@ public class FilePerformanceStatisticsWriter {
 
         log.info("Performance statistics file created [file=" + file.getAbsolutePath() + ']');
 
-        ringByteBuf = new SegmentedRingByteBuffer(DFLT_BUFFER_SIZE, DFLT_FILE_MAX_SIZE,
-            SegmentedRingByteBuffer.BufferMode.DIRECT);
+        long fileMaxSize = IgniteSystemProperties.getLong(IGNITE_PERF_STAT_FILE_MAX_SIZE, DFLT_FILE_MAX_SIZE);
+        int bufSize = IgniteSystemProperties.getInteger(IGNITE_PERF_STAT_BUFFER_SIZE, DFLT_BUFFER_SIZE);
+
+        ringByteBuf = new SegmentedRingByteBuffer(bufSize, fileMaxSize, SegmentedRingByteBuffer.BufferMode.DIRECT);
 
         fileWriter = new FileWriter(ctx, log);
     }
@@ -320,9 +335,9 @@ public class FilePerformanceStatisticsWriter {
 
         seg.release();
 
-        int bufCnt = writtenToBuf.get() / DFLT_FLUSH_SIZE;
+        int bufCnt = writtenToBuf.get() / flushSize;
 
-        if (writtenToBuf.addAndGet(size) / DFLT_FLUSH_SIZE > bufCnt) {
+        if (writtenToBuf.addAndGet(size) / flushSize > bufCnt) {
             // Wake up worker to start writing data to the file.
             synchronized (fileWriter) {
                 fileWriter.notify();
@@ -372,7 +387,7 @@ public class FilePerformanceStatisticsWriter {
 
     /** @return {@code True} if string was cached and can be written as hashcode. */
     private boolean cacheIfPossible(String str) {
-        if (knownStrsSz >= DFLT_CACHED_STRINGS_THRESHOLD)
+        if (knownStrsSz >= cachedStrsThreshold)
             return false;
 
         int hash = str.hashCode();
@@ -407,7 +422,7 @@ public class FilePerformanceStatisticsWriter {
 
                     try {
                         synchronized (this) {
-                            if (writtenToFile / DFLT_FLUSH_SIZE == writtenToBuf.get() / DFLT_FLUSH_SIZE)
+                            if (writtenToFile / flushSize == writtenToBuf.get() / flushSize)
                                 wait();
                         }
                     }

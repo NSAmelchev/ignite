@@ -117,6 +117,10 @@ import static org.apache.ignite.internal.processors.failure.FailureProcessor.DFL
 import static org.apache.ignite.internal.processors.job.GridJobProcessor.DFLT_JOBS_HISTORY_SIZE;
 import static org.apache.ignite.internal.processors.jobmetrics.GridJobMetricsProcessor.DFLT_JOBS_METRICS_CONCURRENCY_LEVEL;
 import static org.apache.ignite.internal.processors.metastorage.persistence.DistributedMetaStorageImpl.DFLT_MAX_HISTORY_BYTES;
+import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsWriter.DFLT_BUFFER_SIZE;
+import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsWriter.DFLT_CACHED_STRINGS_THRESHOLD;
+import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsWriter.DFLT_FILE_MAX_SIZE;
+import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsWriter.DFLT_FLUSH_SIZE;
 import static org.apache.ignite.internal.processors.query.QueryUtils.DFLT_INDEXING_DISCOVERY_HISTORY_SIZE;
 import static org.apache.ignite.internal.processors.rest.GridRestProcessor.DFLT_SES_TIMEOUT;
 import static org.apache.ignite.internal.processors.rest.GridRestProcessor.DFLT_SES_TOKEN_INVALIDATE_INTERVAL;
@@ -1918,24 +1922,32 @@ public final class IgniteSystemProperties {
      * Performance statistics maximum file size in bytes. Performance statistics will be stopped when the size exceeded.
      * The default value is {@link FilePerformanceStatisticsWriter#DFLT_FILE_MAX_SIZE}.
      */
+    @SystemProperty(value = "Performance statistics maximum file size in bytes. Performance statistics will be " +
+        "stopped when the size exceeded", type = Long.class, defaults = "" + DFLT_FILE_MAX_SIZE)
     public static final String IGNITE_PERF_STAT_FILE_MAX_SIZE = "IGNITE_PERF_STAT_FILE_MAX_SIZE";
 
     /**
      * Performance statistics off heap buffer size in bytes. The default value is
      * {@link FilePerformanceStatisticsWriter#DFLT_BUFFER_SIZE}.
      */
+    @SystemProperty(value = "Performance statistics off heap buffer size in bytes", type = Integer.class,
+        defaults = "" + DFLT_BUFFER_SIZE)
     public static final String IGNITE_PERF_STAT_BUFFER_SIZE = "IGNITE_PERF_STAT_BUFFER_SIZE";
 
     /**
      * Performance statistics minimal batch size to flush in bytes. The default value is
      * {@link FilePerformanceStatisticsWriter#DFLT_FLUSH_SIZE}.
      */
+    @SystemProperty(value = "Performance statistics minimal batch size to flush in bytes", type = Integer.class,
+        defaults = "" + DFLT_FLUSH_SIZE)
     public static final String IGNITE_PERF_STAT_FLUSH_SIZE = "IGNITE_PERF_STAT_FLUSH_SIZE";
 
     /**
      * Performance statistics maximum cached strings threshold. String caching will stop on threshold excess.
      * The default value is {@link FilePerformanceStatisticsWriter#DFLT_CACHED_STRINGS_THRESHOLD}.
      */
+    @SystemProperty(value = "Performance statistics maximum cached strings threshold. String caching will stop on " +
+        "threshold excess", type = Integer.class, defaults = "" + DFLT_CACHED_STRINGS_THRESHOLD)
     public static final String IGNITE_PERF_STAT_CACHED_STRINGS_THRESHOLD = "IGNITE_PERF_STAT_CACHED_STRINGS_THRESHOLD";
 
     /**

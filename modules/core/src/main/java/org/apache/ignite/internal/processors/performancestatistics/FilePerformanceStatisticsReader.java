@@ -84,7 +84,13 @@ public class FilePerformanceStatisticsReader {
     private final PerformanceStatisticsHandler[] handlers;
 
     /** Cached strings by hashcodes. */
-    private final Map<Integer, String> strings = new HashMap<>();
+    private final Map<Integer, String> knownStrs = new HashMap<>();
+
+    /** */
+    private UnknownStringInfo strFindMode;
+
+    /** */
+    long curRecPos;
 
     /** @param handlers Handlers to process deserialized operations. */
     public FilePerformanceStatisticsReader(PerformanceStatisticsHandler... handlers) {
@@ -119,8 +125,23 @@ public class FilePerformanceStatisticsReader {
                     while (true) {
                         int pos = buf.position();
 
-                        if (deserialize(buf, nodeId))
+                        if (deserialize(buf, nodeId)) {
+                            if (strFindMode != null && strFindMode.found) {
+                                io.position(strFindMode.recPos);
+
+                                curRecPos = strFindMode.recPos;
+
+                                buf.limit(0);
+
+                                strFindMode = null;
+
+                                break;
+                            }
+
+                            curRecPos += buf.position() - pos;
+
                             continue;
+                        }
 
                         buf.position(pos);
 
@@ -129,9 +150,11 @@ public class FilePerformanceStatisticsReader {
 
                     buf.compact();
                 }
+
+                curRecPos = 0;
             }
 
-            strings.clear();
+            knownStrs.clear();
         }
     }
 
@@ -195,9 +218,9 @@ public class FilePerformanceStatisticsReader {
                 if (buf.remaining() < 4)
                     return false;
 
-                int hashcode = buf.getInt();
+                int hash = buf.getInt();
 
-                text = strings.get(hashcode);
+                text = knownStrs.get(hash);
 
                 if (buf.remaining() < queryRecordSize(0, true) - 1 - 4)
                     return false;
@@ -213,7 +236,7 @@ public class FilePerformanceStatisticsReader {
 
                 text = readString(buf, textLen);
 
-                strings.put(text.hashCode(), text);
+                knownStrs.put(text.hashCode(), text);
             }
 
             GridCacheQueryType queryType = GridCacheQueryType.fromOrdinal(buf.get());
@@ -257,9 +280,12 @@ public class FilePerformanceStatisticsReader {
                 if (buf.remaining() < 4)
                     return false;
 
-                int hashcode = buf.getInt();
+                int hash = buf.getInt();
 
-                taskName = strings.get(hashcode);
+                taskName = knownStrs.get(hash);
+
+                if (taskName == null && strFindMode == null)
+                    strFindMode = new UnknownStringInfo(curRecPos, hash);
 
                 if (buf.remaining() < taskRecordSize(0, true) - 1 - 4)
                     return false;
@@ -275,7 +301,10 @@ public class FilePerformanceStatisticsReader {
 
                 taskName = readString(buf, nameLen);
 
-                strings.put(taskName.hashCode(), taskName);
+                knownStrs.put(taskName.hashCode(), taskName);
+
+                if (strFindMode != null && strFindMode.hash == taskName.hashCode())
+                    strFindMode.found = true;
             }
 
             IgniteUuid sesId = readIgniteUuid(buf);
@@ -283,7 +312,7 @@ public class FilePerformanceStatisticsReader {
             long duration = buf.getLong();
             int affPartId = buf.getInt();
 
-            if (taskName == null)
+            if (strFindMode != null)
                 return true;
 
             for (PerformanceStatisticsHandler handler : handlers)
@@ -300,6 +329,9 @@ public class FilePerformanceStatisticsReader {
             long startTime = buf.getLong();
             long duration = buf.getLong();
             boolean timedOut = buf.get() != 0;
+
+            if (strFindMode != null)
+                return true;
 
             for (PerformanceStatisticsHandler handler : handlers)
                 handler.job(nodeId, sesId, queuedTime, startTime, duration, timedOut);
@@ -368,5 +400,23 @@ public class FilePerformanceStatisticsReader {
         UUID globalId = new UUID(buf.getLong(), buf.getLong());
 
         return new IgniteUuid(globalId, buf.getLong());
+    }
+
+    /** */
+    private static class UnknownStringInfo {
+        /** */
+        final long recPos;
+
+        /** */
+        final int hash;
+
+        /** */
+        boolean found;
+
+        /** */
+        UnknownStringInfo(long recPos, int hash) {
+            this.recPos = recPos;
+            this.hash = hash;
+        }
     }
 }

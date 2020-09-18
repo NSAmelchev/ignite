@@ -84,7 +84,7 @@ public class FilePerformanceStatisticsReader {
     private final PerformanceStatisticsHandler[] handlers;
 
     /** Cached strings by hashcodes. */
-    private final Map<Integer, String> strings = new HashMap<>();
+    private final Map<Integer, String> knownStrs = new HashMap<>();
 
     /** @param handlers Handlers to process deserialized operations. */
     public FilePerformanceStatisticsReader(PerformanceStatisticsHandler... handlers) {
@@ -131,7 +131,7 @@ public class FilePerformanceStatisticsReader {
                 }
             }
 
-            strings.clear();
+            knownStrs.clear();
         }
     }
 
@@ -197,7 +197,7 @@ public class FilePerformanceStatisticsReader {
 
                 int hashcode = buf.getInt();
 
-                text = strings.get(hashcode);
+                text = knownStrs.get(hashcode);
 
                 if (buf.remaining() < queryRecordSize(0, true) - 1 - 4)
                     return false;
@@ -213,7 +213,7 @@ public class FilePerformanceStatisticsReader {
 
                 text = readString(buf, textLen);
 
-                strings.put(text.hashCode(), text);
+                knownStrs.put(text.hashCode(), text);
             }
 
             GridCacheQueryType queryType = GridCacheQueryType.fromOrdinal(buf.get());
@@ -259,7 +259,7 @@ public class FilePerformanceStatisticsReader {
 
                 int hashcode = buf.getInt();
 
-                taskName = strings.get(hashcode);
+                taskName = knownStrs.get(hashcode);
 
                 if (buf.remaining() < taskRecordSize(0, true) - 1 - 4)
                     return false;
@@ -275,7 +275,7 @@ public class FilePerformanceStatisticsReader {
 
                 taskName = readString(buf, nameLen);
 
-                strings.put(taskName.hashCode(), taskName);
+                knownStrs.put(taskName.hashCode(), taskName);
             }
 
             IgniteUuid sesId = readIgniteUuid(buf);

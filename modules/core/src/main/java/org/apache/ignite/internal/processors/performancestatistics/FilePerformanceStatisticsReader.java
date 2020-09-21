@@ -86,6 +86,12 @@ public class FilePerformanceStatisticsReader {
     /** Cached strings by hashcodes. */
     private final Map<Integer, String> knownStrs = new HashMap<>();
 
+    /** Current record position. */
+    private long curRecPos;
+
+    /** Unknown string info to find. */
+    private UnknownStringInfo unknownStr;
+
     /** @param handlers Handlers to process deserialized operations. */
     public FilePerformanceStatisticsReader(PerformanceStatisticsHandler... handlers) {
         A.notEmpty(handlers, "At least one handler expected.");
@@ -113,22 +119,51 @@ public class FilePerformanceStatisticsReader {
             UUID nodeId = nodeId(file);
 
             try (FileIO io = ioFactory.create(file)) {
-                while (io.read(buf) > 0) {
+                while (true) {
+                    if (io.read(buf) <= 0) {
+                        if (unknownStr != null && !unknownStr.skip) {
+                            unknownStr.skip = true;
+
+                            io.position(unknownStr.recPos);
+
+                            buf.clear();
+
+                            continue;
+                        }
+
+                        break;
+                    }
+
                     buf.flip();
 
                     while (true) {
                         int pos = buf.position();
 
-                        if (deserialize(buf, nodeId))
-                            continue;
+                        if (!deserialize(buf, nodeId)) {
+                            buf.position(pos);
 
-                        buf.position(pos);
+                            break;
+                        }
 
-                        break;
+                        if (unknownStr != null && unknownStr.found) {
+                            io.position(unknownStr.recPos);
+
+                            curRecPos = unknownStr.recPos;
+
+                            buf.limit(0);
+
+                            unknownStr = null;
+
+                            break;
+                        }
+
+                        curRecPos += buf.position() - pos;
                     }
 
                     buf.compact();
                 }
+
+                curRecPos = 0;
             }
 
             knownStrs.clear();
@@ -156,8 +191,10 @@ public class FilePerformanceStatisticsReader {
             long startTime = buf.getLong();
             long duration = buf.getLong();
 
-            for (PerformanceStatisticsHandler handler : handlers)
-                handler.cacheOperation(nodeId, opType, cacheId, startTime, duration);
+            if (!skipHandlersIfNeed()) {
+                for (PerformanceStatisticsHandler handler : handlers)
+                    handler.cacheOperation(nodeId, opType, cacheId, startTime, duration);
+            }
 
             return true;
         }
@@ -178,8 +215,10 @@ public class FilePerformanceStatisticsReader {
             long startTime = buf.getLong();
             long duration = buf.getLong();
 
-            for (PerformanceStatisticsHandler handler : handlers)
-                handler.transaction(nodeId, cacheIds, startTime, duration, opType == TX_COMMIT);
+            if (!skipHandlersIfNeed()) {
+                for (PerformanceStatisticsHandler handler : handlers)
+                    handler.transaction(nodeId, cacheIds, startTime, duration, opType == TX_COMMIT);
+            }
 
             return true;
         }
@@ -195,9 +234,7 @@ public class FilePerformanceStatisticsReader {
                 if (buf.remaining() < 4)
                     return false;
 
-                int hashcode = buf.getInt();
-
-                text = knownStrs.get(hashcode);
+                text = readCachedString(buf);
 
                 if (buf.remaining() < queryRecordSize(0, true) - 1 - 4)
                     return false;
@@ -212,8 +249,6 @@ public class FilePerformanceStatisticsReader {
                     return false;
 
                 text = readString(buf, textLen);
-
-                knownStrs.put(text.hashCode(), text);
             }
 
             GridCacheQueryType queryType = GridCacheQueryType.fromOrdinal(buf.get());
@@ -222,11 +257,10 @@ public class FilePerformanceStatisticsReader {
             long duration = buf.getLong();
             boolean success = buf.get() != 0;
 
-            if (text == null)
-                return true;
-
-            for (PerformanceStatisticsHandler handler : handlers)
-                handler.query(nodeId, queryType, text, id, startTime, duration, success);
+            if (!skipHandlersIfNeed()) {
+                for (PerformanceStatisticsHandler handler : handlers)
+                    handler.query(nodeId, queryType, text, id, startTime, duration, success);
+            }
 
             return true;
         }
@@ -240,8 +274,10 @@ public class FilePerformanceStatisticsReader {
             long logicalReads = buf.getLong();
             long physicalReads = buf.getLong();
 
-            for (PerformanceStatisticsHandler handler : handlers)
-                handler.queryReads(nodeId, queryType, uuid, id, logicalReads, physicalReads);
+            if (!skipHandlersIfNeed()) {
+                for (PerformanceStatisticsHandler handler : handlers)
+                    handler.queryReads(nodeId, queryType, uuid, id, logicalReads, physicalReads);
+            }
 
             return true;
         }
@@ -257,9 +293,7 @@ public class FilePerformanceStatisticsReader {
                 if (buf.remaining() < 4)
                     return false;
 
-                int hashcode = buf.getInt();
-
-                taskName = knownStrs.get(hashcode);
+                taskName = readCachedString(buf);
 
                 if (buf.remaining() < taskRecordSize(0, true) - 1 - 4)
                     return false;
@@ -274,8 +308,6 @@ public class FilePerformanceStatisticsReader {
                     return false;
 
                 taskName = readString(buf, nameLen);
-
-                knownStrs.put(taskName.hashCode(), taskName);
             }
 
             IgniteUuid sesId = readIgniteUuid(buf);
@@ -283,11 +315,10 @@ public class FilePerformanceStatisticsReader {
             long duration = buf.getLong();
             int affPartId = buf.getInt();
 
-            if (taskName == null)
-                return true;
-
-            for (PerformanceStatisticsHandler handler : handlers)
-                handler.task(nodeId, sesId, taskName, startTime, duration, affPartId);
+            if (!skipHandlersIfNeed()) {
+                for (PerformanceStatisticsHandler handler : handlers)
+                    handler.task(nodeId, sesId, taskName, startTime, duration, affPartId);
+            }
 
             return true;
         }
@@ -301,13 +332,27 @@ public class FilePerformanceStatisticsReader {
             long duration = buf.getLong();
             boolean timedOut = buf.get() != 0;
 
-            for (PerformanceStatisticsHandler handler : handlers)
-                handler.job(nodeId, sesId, queuedTime, startTime, duration, timedOut);
+            if (!skipHandlersIfNeed()) {
+                for (PerformanceStatisticsHandler handler : handlers)
+                    handler.job(nodeId, sesId, queuedTime, startTime, duration, timedOut);
+            }
 
             return true;
         }
         else
             throw new IgniteException("Unknown operation type id [typeId=" + opTypeByte + ']');
+    }
+
+    /** @return {@code True} if skip handlers notification. */
+    private boolean skipHandlersIfNeed() {
+        if (unknownStr != null) {
+            if (unknownStr.skip)
+                unknownStr = null;
+
+            return true;
+        }
+
+        return false;
     }
 
     /** Resolves performance statistics files. */
@@ -349,13 +394,32 @@ public class FilePerformanceStatisticsReader {
         return null;
     }
 
+    /** Reads cached string from byte buffer. */
+    private String readCachedString(ByteBuffer buf) {
+        int hash = buf.getInt();
+
+        String str = knownStrs.get(hash);
+
+        if (str == null && unknownStr == null)
+            unknownStr = new UnknownStringInfo(curRecPos, hash);
+
+        return str;
+    }
+
     /** Reads string from byte buffer. */
-    private static String readString(ByteBuffer buf, int size) {
+    private String readString(ByteBuffer buf, int size) {
         byte[] bytes = new byte[size];
 
         buf.get(bytes);
 
-        return new String(bytes);
+        String str = new String(bytes);
+
+        knownStrs.put(str.hashCode(), str);
+
+        if (unknownStr != null && unknownStr.hash == str.hashCode())
+            unknownStr.found = true;
+
+        return str;
     }
 
     /** Reads {@link UUID} from buffer. */
@@ -368,5 +432,29 @@ public class FilePerformanceStatisticsReader {
         UUID globalId = new UUID(buf.getLong(), buf.getLong());
 
         return new IgniteUuid(globalId, buf.getLong());
+    }
+
+    /** Unknown string info. */
+    private static class UnknownStringInfo {
+        /** Unknown string record position. */
+        final long recPos;
+
+        /** Hashcode. */
+        final int hash;
+
+        /** String found flag. */
+        boolean found;
+
+        /** Skip record flag. */
+        boolean skip;
+
+        /**
+         * @param recPos Unknown string record position.
+         * @param hash Hashcode.
+         */
+        UnknownStringInfo(long recPos, int hash) {
+            this.recPos = recPos;
+            this.hash = hash;
+        }
     }
 }

@@ -126,6 +126,8 @@ public class FilePerformanceStatisticsReader {
 
                             io.position(unknownStr.recPos);
 
+                            curRecPos = unknownStr.recPos;
+
                             buf.clear();
 
                             continue;

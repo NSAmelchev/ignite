@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.processors.performancestatistics;
 
+import java.io.File;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.internal.IgniteEx;
@@ -66,8 +68,9 @@ public class StringCacheTest extends AbstractPerformanceStatisticsTest {
             jobRecordSize() * executions +
             /*opType*/ 2 * executions;
 
-        long statFileLen = FilePerformanceStatisticsWriter.statisticsFile(ignite.context()).length();
+        List<File> files = statisticsFiles();
 
-        assertEquals(expLen, statFileLen);
+        assertEquals(1, files.size());
+        assertEquals(expLen, files.get(0).length());
     }
 }

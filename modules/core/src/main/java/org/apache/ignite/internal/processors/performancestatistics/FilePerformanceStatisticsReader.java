@@ -75,7 +75,7 @@ public class FilePerformanceStatisticsReader {
         "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}";
 
     /** File name pattern. */
-    private static final Pattern FILE_PATTERN = Pattern.compile("^node-(" + UUID_STR_PATTERN + ").prf$");
+    private static final Pattern FILE_PATTERN = Pattern.compile("^node-(" + UUID_STR_PATTERN + ")(-\\d+)?.prf$");
 
     /** IO factory. */
     private final RandomAccessFileIOFactory ioFactory = new RandomAccessFileIOFactory();
@@ -311,7 +311,7 @@ public class FilePerformanceStatisticsReader {
     }
 
     /** Resolves performance statistics files. */
-    private static List<File> resolveFiles(List<File> filesOrDirs) throws IOException {
+    static List<File> resolveFiles(List<File> filesOrDirs) throws IOException {
         if (filesOrDirs == null || filesOrDirs.isEmpty())
             return Collections.emptyList();
 

@@ -68,8 +68,6 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
  * <p>
  * Each node collects statistics to a file placed under {@link #PERF_STAT_DIR}.
  * <p>
- * <b>Note:</b> Start again will erase previous performance statistics files.
- * <p>
  * To iterate over records use {@link FilePerformanceStatisticsReader}.
  */
 public class FilePerformanceStatisticsWriter {
@@ -136,9 +134,7 @@ public class FilePerformanceStatisticsWriter {
     public FilePerformanceStatisticsWriter(GridKernalContext ctx) throws IgniteCheckedException, IOException {
         log = ctx.log(getClass());
 
-        File file = statisticsFile(ctx);
-
-        U.delete(file);
+        File file = resolveStatisticsFile(ctx);
 
         fileIo = fileIoFactory.create(file);
 
@@ -346,12 +342,22 @@ public class FilePerformanceStatisticsWriter {
     }
 
     /** @return Performance statistics file. */
-    static File statisticsFile(GridKernalContext ctx) throws IgniteCheckedException {
+    private static File resolveStatisticsFile(GridKernalContext ctx) throws IgniteCheckedException {
         String igniteWorkDir = U.workDirectory(ctx.config().getWorkDirectory(), ctx.config().getIgniteHome());
 
         File fileDir = U.resolveWorkDirectory(igniteWorkDir, PERF_STAT_DIR, false);
 
-        return new File(fileDir, "node-" + ctx.localNodeId() + ".prf");
+        File file = new File(fileDir, "node-" + ctx.localNodeId() + ".prf");;
+
+        int idx = 0;
+
+        while (file.exists()) {
+            idx++;
+
+            file = new File(fileDir, "node-" + ctx.localNodeId() + '-' + idx + ".prf");
+        }
+
+        return file;
     }
 
     /** Writes {@link UUID} to buffer. */

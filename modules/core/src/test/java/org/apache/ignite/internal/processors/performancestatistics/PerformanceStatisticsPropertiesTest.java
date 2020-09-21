@@ -17,13 +17,13 @@
 
 package org.apache.ignite.internal.processors.performancestatistics;
 
+import java.io.File;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteSystemProperties;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteEx;
-import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.lang.IgniteRunnable;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.testframework.junits.WithSystemProperty;
@@ -92,7 +92,11 @@ public class PerformanceStatisticsPropertiesTest extends AbstractPerformanceStat
 
         long expLen = opsCnt.get() * (/*typeOp*/1 + OperationType.cacheRecordSize());
 
-        long statFileLen = FilePerformanceStatisticsWriter.statisticsFile(srv.context()).length();
+        List<File> files = statisticsFiles();
+
+        assertEquals(1, files.size());
+
+        long statFileLen = files.get(0).length();
 
         assertEquals(expLen, statFileLen);
 
@@ -110,17 +114,24 @@ public class PerformanceStatisticsPropertiesTest extends AbstractPerformanceStat
         for (int i = 0; i < opsCnt; i++)
             srv.cache(DEFAULT_CACHE_NAME).get(i);
 
-        assertEquals(0, FilePerformanceStatisticsWriter.statisticsFile(srv.context()).length());
+        List<File> files = statisticsFiles();
+
+        assertEquals(1, files.size());
+        assertEquals(0, files.get(0).length());
 
         srv.cache(DEFAULT_CACHE_NAME).get(0);
 
         assertTrue(waitForCondition(
             () -> {
                 try {
-                    return FilePerformanceStatisticsWriter.statisticsFile(srv.context()).length() > 0;
+                    List<File> statFiles = statisticsFiles();
+
+                    assertEquals(1, statFiles.size());
+
+                    return statFiles.get(0).length() > 0;
                 }
-                catch (IgniteCheckedException e) {
-                    throw U.convertException(e);
+                catch (Exception e) {
+                    throw new RuntimeException(e);
                 }
             },
             getTestTimeout()));
@@ -171,6 +182,9 @@ public class PerformanceStatisticsPropertiesTest extends AbstractPerformanceStat
 
         assertEquals(tasksCnt * executions, tasks.get());
 
-        assertEquals(expLen, FilePerformanceStatisticsWriter.statisticsFile(srv.context()).length());
+        List<File> files = statisticsFiles();
+
+        assertEquals(1, files.size());
+        assertEquals(expLen, files.get(0).length());
     }
 }

@@ -447,7 +447,7 @@ public class FilePerformanceStatisticsReader {
         /** String found flag. */
         boolean found;
 
-        /** Skip record flag. */
+        /** Skip record if string was not found flag. */
         boolean skip;
 
         /**

@@ -166,6 +166,7 @@ public class FilePerformanceStatisticsReader {
                 }
 
                 curRecPos = 0;
+                unknownStr = null;
             }
 
             knownStrs.clear();

@@ -416,7 +416,7 @@ public class FilePerformanceStatisticsReader {
 
         String str = new String(bytes);
 
-        knownStrs.put(str.hashCode(), str);
+        knownStrs.putIfAbsent(str.hashCode(), str);
 
         if (unknownStr != null && unknownStr.hash == str.hashCode())
             unknownStr.found = true;

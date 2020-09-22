@@ -86,11 +86,11 @@ public class StringCacheTest extends AbstractPerformanceStatisticsTest {
 
     /** @throws Exception If failed. */
     @Test
-    public void testStringSearch() throws Exception {
+    public void testStringForwardRead() throws Exception {
         IgniteEx ignite = startGrid(0);
 
         String testTaskName = "TestTask-";
-        int executions = 10;
+        int executions = 20;
         int threadCnt = 8;
 
         startCollectStatistics();
@@ -119,6 +119,8 @@ public class StringCacheTest extends AbstractPerformanceStatisticsTest {
         stopCollectStatisticsAndRead(new TestHandler() {
             @Override public void task(UUID nodeId, IgniteUuid sesId, String taskName, long startTime, long duration,
                 int affPartId) {
+                assertNotNull(taskName);
+
                 tasks.incrementAndGet();
             }
         });

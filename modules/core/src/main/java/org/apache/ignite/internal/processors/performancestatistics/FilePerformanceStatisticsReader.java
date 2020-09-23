@@ -130,13 +130,15 @@ public class FilePerformanceStatisticsReader {
                     while (true) {
                         int pos = buf.position();
 
-                        if (!deserialize(buf, nodeId)) {
-                            buf.position(pos);
+                        if (deserialize(buf, nodeId)) {
+                            curRecPos += buf.position() - pos;
 
-                            break;
+                            continue;
                         }
 
-                        curRecPos += buf.position() - pos;
+                        buf.position(pos);
+
+                        break;
                     }
 
                     buf.compact();

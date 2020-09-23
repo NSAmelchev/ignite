@@ -93,7 +93,7 @@ public class FilePerformanceStatisticsReader {
     private long curRecPos;
 
     /** String finder. */
-    private ForwardStringFinder strFinder = new ForwardStringFinder();
+    private StringFinder strFinder = new StringFinder();
 
     /** @param handlers Handlers to process deserialized operations. */
     public FilePerformanceStatisticsReader(PerformanceStatisticsHandler... handlers) {
@@ -394,21 +394,22 @@ public class FilePerformanceStatisticsReader {
         return new IgniteUuid(globalId, buf.getLong());
     }
 
-    /** */
-    private class ForwardStringFinder {
+    /** String finder.  */
+    private class StringFinder {
         /** Read buffer. */
         private ByteBuffer buf = allocateDirect(READ_BUFFER_SIZE).order(nativeOrder());
 
         /** Hashcode. */
-        private Integer hash;
+        private int hash;
 
         /** Found flag. */
         private boolean found;
 
-        /** */
+        /** @param hash String hashcode to find. */
         String findString(int hash) throws IOException {
             this.hash = hash;
             found = false;
+            buf.clear();
 
             long fileIoPos = fileIo.position();
 
@@ -420,13 +421,15 @@ public class FilePerformanceStatisticsReader {
                 while (!found) {
                     int pos = buf.position();
 
-                    if (deserialize(buf))
-                        continue;
+                    if (!deserialize(buf)) {
+                        buf.position(pos);
 
-                    buf.position(pos);
-
-                    break;
+                        break;
+                    }
                 }
+
+                if (found)
+                    break;
 
                 buf.compact();
             }

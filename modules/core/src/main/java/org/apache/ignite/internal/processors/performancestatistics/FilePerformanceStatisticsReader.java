@@ -377,7 +377,7 @@ public class FilePerformanceStatisticsReader {
 
         String str = new String(bytes);
 
-        knownStrs.put(str.hashCode(), str);
+        knownStrs.putIfAbsent(str.hashCode(), str);
 
         return str;
     }
@@ -560,7 +560,7 @@ public class FilePerformanceStatisticsReader {
 
             int hash = str.hashCode();
 
-            knownStrs.put(hash, str);
+            knownStrs.putIfAbsent(hash, str);
 
             if (hash == this.hash)
                 found = true;

@@ -77,14 +77,29 @@ public class FilePerformanceStatisticsReader {
     /** File name pattern. */
     private static final Pattern FILE_PATTERN = Pattern.compile("^node-(" + UUID_STR_PATTERN + ")(-\\d+)?.prf$");
 
+    /** No-op handler. */
+    private static final PerformanceStatisticsHandler[] NOOP_HANDLER = {};
+
     /** IO factory. */
     private final RandomAccessFileIOFactory ioFactory = new RandomAccessFileIOFactory();
+
+    /** Current file I/O. */
+    private FileIO fileIo;
+
+    /** Current record position. */
+    private long curRecPos;
 
     /** Handlers to process deserialized operations. */
     private final PerformanceStatisticsHandler[] handlers;
 
     /** Cached strings by hashcodes. */
     private final Map<Integer, String> knownStrs = new HashMap<>();
+
+    /** Current handlers. */
+    private PerformanceStatisticsHandler[] currHandlers;
+
+    /** */
+    private ForwardRead forwardRead;
 
     /** @param handlers Handlers to process deserialized operations. */
     public FilePerformanceStatisticsReader(PerformanceStatisticsHandler... handlers) {
@@ -113,18 +128,56 @@ public class FilePerformanceStatisticsReader {
             UUID nodeId = nodeId(file);
 
             try (FileIO io = ioFactory.create(file)) {
-                while (io.read(buf) > 0) {
+                fileIo = io;
+
+                while (true) {
+                    if (io.read(buf) <= 0) {
+                        if (forwardRead != null && !forwardRead.skip) {
+                            forwardRead.skip = true;
+
+                            io.position(curRecPos);
+
+                            buf.clear();
+
+                            continue;
+                        }
+
+                        break;
+                    }
+
                     buf.flip();
 
                     while (true) {
                         int pos = buf.position();
 
-                        if (deserialize(buf, nodeId))
-                            continue;
+                        if (!deserialize(buf, nodeId, currHandlers)) {
+                            buf.position(pos);
 
-                        buf.position(pos);
+                            if (forwardRead != null)
+                                forwardRead.resetBuf = true;
 
-                        break;
+                            break;
+                        }
+
+                        if (forwardRead == null)
+                            curRecPos += buf.position() - pos;
+
+                        if (forwardRead != null && forwardRead.found) {
+                            if (forwardRead.resetBuf) {
+                                buf.limit(0);
+
+                                fileIo.position(curRecPos);
+                            }
+                            else {
+                                int newPos = (int)(curRecPos - fileIo.position());
+                                System.out.println("MY pos="+newPos);
+                                buf.position((int)(curRecPos - fileIo.position()));
+                            }
+
+                            forwardRead = null;
+
+                            currHandlers = handlers;
+                        }
                     }
 
                     buf.compact();
@@ -132,15 +185,18 @@ public class FilePerformanceStatisticsReader {
             }
 
             knownStrs.clear();
+            curRecPos = 0;
+            forwardRead = null;
         }
     }
 
     /**
      * @param buf Buffer.
      * @param nodeId Node id.
+     * @param handlers Handlers.
      * @return {@code True} if operation deserialized. {@code False} if not enough bytes.
      */
-    private boolean deserialize(ByteBuffer buf, UUID nodeId) {
+    private boolean deserialize(ByteBuffer buf, UUID nodeId, PerformanceStatisticsHandler... handlers) {
         if (buf.remaining() < 1)
             return false;
 
@@ -195,9 +251,7 @@ public class FilePerformanceStatisticsReader {
                 if (buf.remaining() < 4)
                     return false;
 
-                int hashcode = buf.getInt();
-
-                text = knownStrs.get(hashcode);
+                text = readCachedString(buf);
 
                 if (buf.remaining() < queryRecordSize(0, true) - 1 - 4)
                     return false;
@@ -212,8 +266,6 @@ public class FilePerformanceStatisticsReader {
                     return false;
 
                 text = readString(buf, textLen);
-
-                knownStrs.put(text.hashCode(), text);
             }
 
             GridCacheQueryType queryType = GridCacheQueryType.fromOrdinal(buf.get());
@@ -257,9 +309,7 @@ public class FilePerformanceStatisticsReader {
                 if (buf.remaining() < 4)
                     return false;
 
-                int hashcode = buf.getInt();
-
-                taskName = knownStrs.get(hashcode);
+                taskName = readCachedString(buf);
 
                 if (buf.remaining() < taskRecordSize(0, true) - 1 - 4)
                     return false;
@@ -274,8 +324,6 @@ public class FilePerformanceStatisticsReader {
                     return false;
 
                 taskName = readString(buf, nameLen);
-
-                knownStrs.put(taskName.hashCode(), taskName);
             }
 
             IgniteUuid sesId = readIgniteUuid(buf);
@@ -349,13 +397,48 @@ public class FilePerformanceStatisticsReader {
         return null;
     }
 
+    /** Reads cached string from byte buffer. */
+    private String readCachedString(ByteBuffer buf) {
+        int hash = buf.getInt();
+
+        String str = knownStrs.get(hash);
+
+        if (str == null) {
+            if (forwardRead == null) {
+                try {
+                    System.out.println("MY unknown str fileIo="+fileIo.position()+" currPos="+curRecPos+" bPos="+buf.position());
+                }
+                catch (IOException e) {
+                    e.printStackTrace();
+                }
+                forwardRead = new ForwardRead(hash);
+
+                currHandlers = NOOP_HANDLER;
+            }
+            else if (forwardRead.skip) {
+                currHandlers = handlers;
+
+                forwardRead = null;
+            }
+        }
+
+        return str;
+    }
+
     /** Reads string from byte buffer. */
-    private static String readString(ByteBuffer buf, int size) {
+    private String readString(ByteBuffer buf, int size) {
         byte[] bytes = new byte[size];
 
         buf.get(bytes);
 
-        return new String(bytes);
+        String str = new String(bytes);
+
+        knownStrs.putIfAbsent(str.hashCode(), str);
+
+        if (forwardRead != null && forwardRead.hash == str.hashCode())
+            forwardRead.found = true;
+
+        return str;
     }
 
     /** Reads {@link UUID} from buffer. */
@@ -368,5 +451,25 @@ public class FilePerformanceStatisticsReader {
         UUID globalId = new UUID(buf.getLong(), buf.getLong());
 
         return new IgniteUuid(globalId, buf.getLong());
+    }
+
+    /** */
+    private static class ForwardRead {
+        /** Hashcode. */
+        final int hash;
+
+        /** String found flag. */
+        boolean found;
+
+        /** Skip record if string was not found flag. */
+        boolean skip;
+
+        /** {@code True} if the data in the buffer was overwritten during the search. */
+        boolean resetBuf;
+
+        /** */
+        private ForwardRead(int hash) {
+            this.hash = hash;
+        }
     }
 }

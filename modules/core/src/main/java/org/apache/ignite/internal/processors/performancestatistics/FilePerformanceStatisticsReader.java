@@ -204,7 +204,7 @@ public class FilePerformanceStatisticsReader {
      * @param buf Buffer.
      * @param nodeId Node id.
      * @param handlers Handlers.
-     * @return {@code True} if operation deserialized. {@code False} if not enough bytes.
+     * @return Record deserialization state.
      */
     private State deserialize(ByteBuffer buf, UUID nodeId, PerformanceStatisticsHandler... handlers) {
         if (buf.remaining() < 1)

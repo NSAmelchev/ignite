@@ -86,9 +86,6 @@ public class FilePerformanceStatisticsReader {
     /** IO factory. */
     private final RandomAccessFileIOFactory ioFactory = new RandomAccessFileIOFactory();
 
-    /** Current file I/O. */
-    private FileIO fileIo;
-
     /** Current record position. */
     private long curRecPos;
 
@@ -132,8 +129,6 @@ public class FilePerformanceStatisticsReader {
             UUID nodeId = nodeId(file);
 
             try (FileIO io = ioFactory.create(file)) {
-                fileIo = io;
-
                 while (true) {
                     if (io.read(buf) <= 0) {
                         if (forwardRead != null && !forwardRead.skip) {
@@ -164,7 +159,7 @@ public class FilePerformanceStatisticsReader {
                                 if (forwardRead.resetBuf) {
                                     buf.limit(0);
 
-                                    fileIo.position(curRecPos);
+                                    io.position(curRecPos);
                                 }
                                 else
                                     buf.position(forwardRead.bufPos);

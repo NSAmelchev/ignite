@@ -86,27 +86,26 @@ public class FilePerformanceStatisticsReader {
     /** IO factory. */
     private final RandomAccessFileIOFactory ioFactory = new RandomAccessFileIOFactory();
 
-    /** Current record position. */
-    private long curRecPos;
-
     /** Handlers to process deserialized operations. */
     private final PerformanceStatisticsHandler[] handlers;
 
     /** Cached strings by hashcodes. */
     private final Map<Integer, String> knownStrs = new HashMap<>();
 
-    /** Current handlers. */
-    private PerformanceStatisticsHandler[] currHandlers;
+    /** Current record position. */
+    private long curRecPos;
 
     /** Forward read mode. */
     private ForwardRead forwardRead;
+
+    /** Hashcode of string to find in forward read mode. */
+    private int hash;
 
     /** @param handlers Handlers to process deserialized operations. */
     public FilePerformanceStatisticsReader(PerformanceStatisticsHandler... handlers) {
         A.notEmpty(handlers, "At least one handler expected.");
 
         this.handlers = handlers;
-        currHandlers = handlers;
     }
 
     /**
@@ -121,6 +120,8 @@ public class FilePerformanceStatisticsReader {
         if (files.isEmpty())
             return;
 
+        PerformanceStatisticsHandler[] curHnd = handlers;
+
         ByteBuffer buf = allocateDirect(READ_BUFFER_SIZE).order(nativeOrder());
 
         for (File file : files) {
@@ -131,17 +132,14 @@ public class FilePerformanceStatisticsReader {
             try (FileIO io = ioFactory.create(file)) {
                 while (true) {
                     if (io.read(buf) <= 0) {
-                        if (forwardRead != null && !forwardRead.skip) {
-                            forwardRead.skip = true;
+                        if (forwardRead == null || forwardRead.skipRec)
+                            break;
 
-                            io.position(curRecPos);
+                        forwardRead.skipRec = true;
 
-                            buf.clear();
+                        io.position(curRecPos);
 
-                            continue;
-                        }
-
-                        break;
+                        buf.clear();
                     }
 
                     buf.flip();
@@ -149,13 +147,12 @@ public class FilePerformanceStatisticsReader {
                     while (true) {
                         int pos = buf.position();
 
-                        State state = deserialize(buf, nodeId, currHandlers);
+                        State state = deserialize(buf, nodeId, curHnd);
 
                         if (state == DESERIALIZED) {
                             if (forwardRead == null)
                                 curRecPos += buf.position() - pos;
-
-                            if (forwardRead != null && forwardRead.found) {
+                            else if (forwardRead.found) {
                                 if (forwardRead.resetBuf) {
                                     buf.limit(0);
 
@@ -166,10 +163,8 @@ public class FilePerformanceStatisticsReader {
 
                                 forwardRead = null;
 
-                                currHandlers = handlers;
+                                curHnd = handlers;
                             }
-
-                            continue;
                         }
                         else if (state == NOT_ENOUGH_DATA) {
                             buf.position(pos);
@@ -179,16 +174,19 @@ public class FilePerformanceStatisticsReader {
 
                             break;
                         }
+                        else if (state == FORWARD_READ) {
+                            if (forwardRead == null) {
+                                forwardRead = new ForwardRead(pos);
 
-                        if (forwardRead.bufPos == -1)
-                            forwardRead.bufPos = pos;
+                                curHnd = NOOP_HANDLER;
+                            }
+                            else if (forwardRead.skipRec) {
+                                forwardRead = null;
 
-                        if (forwardRead.skip) {
-                            forwardRead = null;
+                                curHnd = handlers;
 
-                            currHandlers = handlers;
-
-                            curRecPos += buf.position() - pos;
+                                curRecPos += buf.position() - pos;
+                            }
                         }
                     }
 
@@ -415,11 +413,8 @@ public class FilePerformanceStatisticsReader {
 
         String str = knownStrs.get(hash);
 
-        if (str == null && forwardRead == null) {
-            forwardRead = new ForwardRead(hash);
-
-            currHandlers = NOOP_HANDLER;
-        }
+        if (str == null && forwardRead == null)
+            this.hash = hash;
 
         return str;
     }
@@ -434,7 +429,7 @@ public class FilePerformanceStatisticsReader {
 
         knownStrs.putIfAbsent(str.hashCode(), str);
 
-        if (forwardRead != null && forwardRead.hash == str.hashCode())
+        if (forwardRead != null && hash == str.hashCode())
             forwardRead.found = true;
 
         return str;
@@ -454,24 +449,21 @@ public class FilePerformanceStatisticsReader {
 
     /** Forward read mode info. */
     private static class ForwardRead {
-        /** Hashcode. */
-        final int hash;
+        /** Buffer position. */
+        final int bufPos;
 
         /** String found flag. */
         boolean found;
 
         /** Skip record if string was not found flag. */
-        boolean skip;
-
-        /** Buffer position. */
-        int bufPos = -1;
+        boolean skipRec;
 
         /** {@code True} if the data in the buffer was overwritten during the search. */
         boolean resetBuf;
 
-        /** */
-        private ForwardRead(int hash) {
-            this.hash = hash;
+        /** @param bufPos Buffer position. */
+        private ForwardRead(int bufPos) {
+            this.bufPos = bufPos;
         }
     }
 
@@ -483,7 +475,7 @@ public class FilePerformanceStatisticsReader {
         /** Record deserialized. */
         DESERIALIZED,
 
-        /** A record contains an unknown string. Forward read mode should be used to find it. */
+        /** Record contains an unknown string. Forward read mode should be used to find it. */
         FORWARD_READ;
     }
 }

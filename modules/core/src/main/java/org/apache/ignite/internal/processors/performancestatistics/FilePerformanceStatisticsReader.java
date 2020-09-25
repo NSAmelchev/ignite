@@ -381,9 +381,9 @@ public class FilePerformanceStatisticsReader {
 
         buf.position(pos);
 
-        forwardRead = new ForwardRead(hash, curRecPos, nextRecPos, bufPos);
-
         curHnd = NOOP_HANDLER;
+
+        forwardRead = new ForwardRead(hash, curRecPos, nextRecPos, bufPos);
     }
 
     /** Resolves performance statistics files. */

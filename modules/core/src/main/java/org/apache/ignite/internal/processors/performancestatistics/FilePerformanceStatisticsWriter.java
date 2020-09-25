@@ -367,7 +367,7 @@ public class FilePerformanceStatisticsWriter {
     }
 
     /** Writes {@link IgniteUuid} to buffer. */
-    private static void writeIgniteUuid(ByteBuffer buf, IgniteUuid uuid) {
+    static void writeIgniteUuid(ByteBuffer buf, IgniteUuid uuid) {
         buf.putLong(uuid.globalId().getMostSignificantBits());
         buf.putLong(uuid.globalId().getLeastSignificantBits());
         buf.putLong(uuid.localId());
@@ -378,7 +378,7 @@ public class FilePerformanceStatisticsWriter {
      * @param str String to write.
      * @param cached {@code True} if string cached.
      */
-    private void writeString(ByteBuffer buf, String str, boolean cached) {
+    static void writeString(ByteBuffer buf, String str, boolean cached) {
         buf.put(cached ? (byte)1 : 0);
 
         if (cached)

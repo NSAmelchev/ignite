@@ -47,9 +47,6 @@ import org.jetbrains.annotations.Nullable;
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.file.Files.walkFileTree;
-import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsReader.State.DESERIALIZED;
-import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsReader.State.FORWARD_READ;
-import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsReader.State.NOT_ENOUGH_DATA;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.JOB;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY_READS;
@@ -70,8 +67,8 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
  * @see FilePerformanceStatisticsWriter
  */
 public class FilePerformanceStatisticsReader {
-    /** File read buffer size. */
-    private static final int READ_BUFFER_SIZE = (int)(8 * U.MB);
+    /** Default file read buffer size. */
+    private static final int DFLT_READ_BUFFER_SIZE = (int)(8 * U.MB);
 
     /** Uuid as string pattern. */
     private static final String UUID_STR_PATTERN =
@@ -86,26 +83,39 @@ public class FilePerformanceStatisticsReader {
     /** IO factory. */
     private final RandomAccessFileIOFactory ioFactory = new RandomAccessFileIOFactory();
 
+    /** Current file I/O. */
+    private FileIO fileIo;
+
+    /** Buffer. */
+    private final ByteBuffer buf;
+
     /** Handlers to process deserialized operations. */
     private final PerformanceStatisticsHandler[] handlers;
+
+    /** Current handlers. */
+    private PerformanceStatisticsHandler[] curHnd;
 
     /** Cached strings by hashcodes. */
     private final Map<Integer, String> knownStrs = new HashMap<>();
 
-    /** Current record position. */
-    private long curRecPos;
-
     /** Forward read mode. */
     private ForwardRead forwardRead;
 
-    /** Hashcode of string to find in forward read mode. */
-    private int hash;
-
     /** @param handlers Handlers to process deserialized operations. */
     public FilePerformanceStatisticsReader(PerformanceStatisticsHandler... handlers) {
+        this(DFLT_READ_BUFFER_SIZE, handlers);
+    }
+
+    /**
+     * @param bufSize Buffer size.
+     * @param handlers Handlers to process deserialized operations.
+     */
+    FilePerformanceStatisticsReader(int bufSize, PerformanceStatisticsHandler... handlers) {
         A.notEmpty(handlers, "At least one handler expected.");
 
+        buf = allocateDirect(bufSize).order(nativeOrder());
         this.handlers = handlers;
+        curHnd = handlers;
     }
 
     /**
@@ -120,73 +130,55 @@ public class FilePerformanceStatisticsReader {
         if (files.isEmpty())
             return;
 
-        PerformanceStatisticsHandler[] curHnd = handlers;
-
-        ByteBuffer buf = allocateDirect(READ_BUFFER_SIZE).order(nativeOrder());
-
         for (File file : files) {
             buf.clear();
 
             UUID nodeId = nodeId(file);
 
             try (FileIO io = ioFactory.create(file)) {
+                fileIo = io;
+
                 while (true) {
                     if (io.read(buf) <= 0) {
-                        if (forwardRead == null || forwardRead.skipRec)
+                        if (forwardRead == null)
                             break;
 
-                        forwardRead.skipRec = true;
-
-                        io.position(curRecPos);
+                        io.position(forwardRead.nextRecPos);
 
                         buf.clear();
+
+                        curHnd = handlers;
+
+                        forwardRead = null;
+
+                        continue;
                     }
 
                     buf.flip();
 
                     while (true) {
-                        int pos = buf.position();
+                        buf.mark();
 
-                        State state = deserialize(buf, nodeId, curHnd);
-
-                        if (state == DESERIALIZED) {
-                            if (forwardRead == null)
-                                curRecPos += buf.position() - pos;
-                            else if (forwardRead.found) {
-                                if (forwardRead.resetBuf) {
-                                    buf.limit(0);
-
-                                    io.position(curRecPos);
-                                }
-                                else
-                                    buf.position(forwardRead.bufPos);
-
-                                forwardRead = null;
-
-                                curHnd = handlers;
-                            }
-                        }
-                        else if (state == NOT_ENOUGH_DATA) {
-                            buf.position(pos);
+                        if (!deserialize(buf, nodeId)) {
+                            buf.reset();
 
                             if (forwardRead != null)
                                 forwardRead.resetBuf = true;
 
                             break;
                         }
-                        else if (state == FORWARD_READ) {
-                            if (forwardRead == null) {
-                                forwardRead = new ForwardRead(pos);
+                        else if (forwardRead != null && forwardRead.found) {
+                            if (forwardRead.resetBuf) {
+                                buf.limit(0);
 
-                                curHnd = NOOP_HANDLER;
+                                io.position(forwardRead.curRecPos);
                             }
-                            else if (forwardRead.skipRec) {
-                                forwardRead = null;
+                            else
+                                buf.position(forwardRead.bufPos);
 
-                                curHnd = handlers;
+                            curHnd = handlers;
 
-                                curRecPos += buf.position() - pos;
-                            }
+                            forwardRead = null;
                         }
                     }
 
@@ -195,7 +187,6 @@ public class FilePerformanceStatisticsReader {
             }
 
             knownStrs.clear();
-            curRecPos = 0;
             forwardRead = null;
         }
     }
@@ -203,12 +194,11 @@ public class FilePerformanceStatisticsReader {
     /**
      * @param buf Buffer.
      * @param nodeId Node id.
-     * @param handlers Handlers.
-     * @return Record deserialization state.
+     * @return {@code True} if operation deserialized. {@code False} if not enough bytes.
      */
-    private State deserialize(ByteBuffer buf, UUID nodeId, PerformanceStatisticsHandler... handlers) {
+    private boolean deserialize(ByteBuffer buf, UUID nodeId) throws IOException {
         if (buf.remaining() < 1)
-            return NOT_ENOUGH_DATA;
+            return false;
 
         byte opTypeByte = buf.get();
 
@@ -216,25 +206,25 @@ public class FilePerformanceStatisticsReader {
 
         if (cacheOperation(opType)) {
             if (buf.remaining() < cacheRecordSize())
-                return NOT_ENOUGH_DATA;
+                return false;
 
             int cacheId = buf.getInt();
             long startTime = buf.getLong();
             long duration = buf.getLong();
 
-            for (PerformanceStatisticsHandler handler : handlers)
+            for (PerformanceStatisticsHandler handler : curHnd)
                 handler.cacheOperation(nodeId, opType, cacheId, startTime, duration);
 
-            return DESERIALIZED;
+            return true;
         }
         else if (transactionOperation(opType)) {
             if (buf.remaining() < 4)
-                return NOT_ENOUGH_DATA;
+                return false;
 
             int cacheIdsCnt = buf.getInt();
 
             if (buf.remaining() < transactionRecordSize(cacheIdsCnt) - 4)
-                return NOT_ENOUGH_DATA;
+                return false;
 
             GridIntList cacheIds = new GridIntList(cacheIdsCnt);
 
@@ -244,36 +234,39 @@ public class FilePerformanceStatisticsReader {
             long startTime = buf.getLong();
             long duration = buf.getLong();
 
-            for (PerformanceStatisticsHandler handler : handlers)
+            for (PerformanceStatisticsHandler handler : curHnd)
                 handler.transaction(nodeId, cacheIds, startTime, duration, opType == TX_COMMIT);
 
-            return DESERIALIZED;
+            return true;
         }
         else if (opType == QUERY) {
             if (buf.remaining() < 1)
-                return NOT_ENOUGH_DATA;
+                return false;
 
             boolean cached = buf.get() != 0;
 
             String text;
+            int hash = 0;
 
             if (cached) {
                 if (buf.remaining() < 4)
-                    return NOT_ENOUGH_DATA;
+                    return false;
 
-                text = readCachedString(buf);
+                hash = buf.getInt();
+
+                text = knownStrs.get(hash);
 
                 if (buf.remaining() < queryRecordSize(0, true) - 1 - 4)
-                    return NOT_ENOUGH_DATA;
+                    return false;
             }
             else {
                 if (buf.remaining() < 4)
-                    return NOT_ENOUGH_DATA;
+                    return false;
 
                 int textLen = buf.getInt();
 
                 if (buf.remaining() < queryRecordSize(textLen, false) - 1 - 4)
-                    return NOT_ENOUGH_DATA;
+                    return false;
 
                 text = readString(buf, textLen);
             }
@@ -285,16 +278,16 @@ public class FilePerformanceStatisticsReader {
             boolean success = buf.get() != 0;
 
             if (text == null)
-                return FORWARD_READ;
+                forwardRead(hash);
 
-            for (PerformanceStatisticsHandler handler : handlers)
+            for (PerformanceStatisticsHandler handler : curHnd)
                 handler.query(nodeId, queryType, text, id, startTime, duration, success);
 
-            return DESERIALIZED;
+            return true;
         }
         else if (opType == QUERY_READS) {
             if (buf.remaining() < queryReadsRecordSize())
-                return NOT_ENOUGH_DATA;
+                return false;
 
             GridCacheQueryType queryType = GridCacheQueryType.fromOrdinal(buf.get());
             UUID uuid = readUuid(buf);
@@ -302,36 +295,39 @@ public class FilePerformanceStatisticsReader {
             long logicalReads = buf.getLong();
             long physicalReads = buf.getLong();
 
-            for (PerformanceStatisticsHandler handler : handlers)
+            for (PerformanceStatisticsHandler handler : curHnd)
                 handler.queryReads(nodeId, queryType, uuid, id, logicalReads, physicalReads);
 
-            return DESERIALIZED;
+            return true;
         }
         else if (opType == TASK) {
             if (buf.remaining() < 1)
-                return NOT_ENOUGH_DATA;
+                return false;
 
             boolean cached = buf.get() != 0;
 
             String taskName;
+            int hash = 0;
 
             if (cached) {
                 if (buf.remaining() < 4)
-                    return NOT_ENOUGH_DATA;
+                    return false;
 
-                taskName = readCachedString(buf);
+                hash = buf.getInt();
+
+                taskName = knownStrs.get(hash);
 
                 if (buf.remaining() < taskRecordSize(0, true) - 1 - 4)
-                    return NOT_ENOUGH_DATA;
+                    return false;
             }
             else {
                 if (buf.remaining() < 4)
-                    return NOT_ENOUGH_DATA;
+                    return false;
 
                 int nameLen = buf.getInt();
 
                 if (buf.remaining() < taskRecordSize(nameLen, false) - 1 - 4)
-                    return NOT_ENOUGH_DATA;
+                    return false;
 
                 taskName = readString(buf, nameLen);
             }
@@ -342,16 +338,16 @@ public class FilePerformanceStatisticsReader {
             int affPartId = buf.getInt();
 
             if (taskName == null)
-                return FORWARD_READ;
+                forwardRead(hash);
 
-            for (PerformanceStatisticsHandler handler : handlers)
+            for (PerformanceStatisticsHandler handler : curHnd)
                 handler.task(nodeId, sesId, taskName, startTime, duration, affPartId);
 
-            return DESERIALIZED;
+            return true;
         }
         else if (opType == JOB) {
             if (buf.remaining() < jobRecordSize())
-                return NOT_ENOUGH_DATA;
+                return false;
 
             IgniteUuid sesId = readIgniteUuid(buf);
             long queuedTime = buf.getLong();
@@ -359,13 +355,35 @@ public class FilePerformanceStatisticsReader {
             long duration = buf.getLong();
             boolean timedOut = buf.get() != 0;
 
-            for (PerformanceStatisticsHandler handler : handlers)
+            for (PerformanceStatisticsHandler handler : curHnd)
                 handler.job(nodeId, sesId, queuedTime, startTime, duration, timedOut);
 
-            return DESERIALIZED;
+            return true;
         }
         else
             throw new IgniteException("Unknown operation type id [typeId=" + opTypeByte + ']');
+    }
+
+    /** Turns on forward read mode. */
+    private void forwardRead(int hash) throws IOException {
+        if (forwardRead != null)
+            return;
+
+        int pos = buf.position();
+
+        long nextRecPos = fileIo.position() - buf.remaining();
+
+        buf.reset();
+
+        int bufPos = buf.position();
+
+        long curRecPos = fileIo.position() - buf.remaining();
+
+        buf.position(pos);
+
+        forwardRead = new ForwardRead(hash, curRecPos, nextRecPos, bufPos);
+
+        curHnd = NOOP_HANDLER;
     }
 
     /** Resolves performance statistics files. */
@@ -407,18 +425,6 @@ public class FilePerformanceStatisticsReader {
         return null;
     }
 
-    /** Reads cached string from byte buffer. */
-    private String readCachedString(ByteBuffer buf) {
-        int hash = buf.getInt();
-
-        String str = knownStrs.get(hash);
-
-        if (str == null && forwardRead == null)
-            this.hash = hash;
-
-        return str;
-    }
-
     /** Reads string from byte buffer. */
     private String readString(ByteBuffer buf, int size) {
         byte[] bytes = new byte[size];
@@ -429,7 +435,7 @@ public class FilePerformanceStatisticsReader {
 
         knownStrs.putIfAbsent(str.hashCode(), str);
 
-        if (forwardRead != null && hash == str.hashCode())
+        if (forwardRead != null && forwardRead.hash == str.hashCode())
             forwardRead.found = true;
 
         return str;
@@ -449,33 +455,35 @@ public class FilePerformanceStatisticsReader {
 
     /** Forward read mode info. */
     private static class ForwardRead {
-        /** Buffer position. */
+        /** Hashcode. */
+        final int hash;
+
+        /** Absolute current record position. */
+        final long curRecPos;
+
+        /** Absolute next record position. */
+        final long nextRecPos;
+
+        /** Current record buffer position. */
         final int bufPos;
 
         /** String found flag. */
         boolean found;
 
-        /** Skip record if string was not found flag. */
-        boolean skipRec;
-
         /** {@code True} if the data in the buffer was overwritten during the search. */
         boolean resetBuf;
 
-        /** @param bufPos Buffer position. */
-        private ForwardRead(int bufPos) {
+        /**
+         * @param hash Hashcode.
+         * @param curRecPos Absolute current record position.
+         * @param nextRecPos Absolute next record position.
+         * @param bufPos Buffer position.
+         */
+        private ForwardRead(int hash, long curRecPos, long nextRecPos, int bufPos) {
+            this.hash = hash;
+            this.curRecPos = curRecPos;
+            this.nextRecPos = nextRecPos;
             this.bufPos = bufPos;
         }
-    }
-
-    /** Record deserialization state. */
-    enum State {
-        /** Not enough data to deserialize a record. */
-        NOT_ENOUGH_DATA,
-
-        /** Record deserialized. */
-        DESERIALIZED,
-
-        /** Record contains an unknown string. Forward read mode should be used to find it. */
-        FORWARD_READ;
     }
 }

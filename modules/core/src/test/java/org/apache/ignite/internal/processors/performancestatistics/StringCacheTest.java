@@ -20,13 +20,10 @@ package org.apache.ignite.internal.processors.performancestatistics;
 import java.io.File;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.lang.IgniteRunnable;
 import org.apache.ignite.lang.IgniteUuid;
-import org.apache.ignite.testframework.GridTestUtils;
 import org.junit.Test;
 
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.jobRecordSize;
@@ -36,13 +33,6 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
  * Tests strings caching.
  */
 public class StringCacheTest extends AbstractPerformanceStatisticsTest {
-    /** {@inheritDoc} */
-    @Override protected void afterTest() throws Exception {
-        super.afterTest();
-
-        stopAllGrids();
-    }
-
     /** @throws Exception If failed. */
     @Test
     public void testCacheTaskName() throws Exception {
@@ -82,49 +72,5 @@ public class StringCacheTest extends AbstractPerformanceStatisticsTest {
 
         assertEquals(1, files.size());
         assertEquals(expLen, files.get(0).length());
-    }
-
-    /** @throws Exception If failed. */
-    @Test
-    public void testStringForwardRead() throws Exception {
-        IgniteEx ignite = startGrid(0);
-
-        String testTaskName = "TestTask-";
-        int executions = 20;
-        int threadCnt = 8;
-
-        startCollectStatistics();
-
-        CyclicBarrier barrier = new CyclicBarrier(threadCnt);
-
-        GridTestUtils.runMultiThreaded(() -> {
-            for (int i = 0; i < executions; i++) {
-                try {
-                    barrier.await(getTestTimeout(), TimeUnit.MILLISECONDS);
-                }
-                catch (Exception ignored) {
-                    // No-op.
-                }
-
-                ignite.compute().withName(testTaskName + i).run(new IgniteRunnable() {
-                    @Override public void run() {
-                        // No-op.
-                    }
-                });
-            }
-        }, threadCnt, "load");
-
-        AtomicInteger tasks = new AtomicInteger();
-
-        stopCollectStatisticsAndRead(new TestHandler() {
-            @Override public void task(UUID nodeId, IgniteUuid sesId, String taskName, long startTime, long duration,
-                int affPartId) {
-                assertNotNull(taskName);
-
-                tasks.incrementAndGet();
-            }
-        });
-
-        assertEquals(executions * threadCnt, tasks.get());
     }
 }

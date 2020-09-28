@@ -159,12 +159,9 @@ public class FilePerformanceStatisticsReader {
                     buf.mark();
 
                     while (deserialize(buf, nodeId)) {
-                        buf.mark();
-
                         if (forwardRead != null && forwardRead.found) {
                             if (forwardRead.resetBuf) {
                                 buf.limit(0);
-                                buf.mark();
 
                                 io.position(forwardRead.curRecPos);
                             }
@@ -175,6 +172,8 @@ public class FilePerformanceStatisticsReader {
 
                             forwardRead = null;
                         }
+
+                        buf.mark();
                     }
 
                     buf.reset();

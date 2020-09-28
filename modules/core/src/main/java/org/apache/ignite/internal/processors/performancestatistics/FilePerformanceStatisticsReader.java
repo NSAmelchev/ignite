@@ -164,6 +164,7 @@ public class FilePerformanceStatisticsReader {
                         if (forwardRead != null && forwardRead.found) {
                             if (forwardRead.resetBuf) {
                                 buf.limit(0);
+                                buf.mark();
 
                                 io.position(forwardRead.curRecPos);
                             }

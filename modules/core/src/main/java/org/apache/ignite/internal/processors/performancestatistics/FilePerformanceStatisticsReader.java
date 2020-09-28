@@ -156,18 +156,8 @@ public class FilePerformanceStatisticsReader {
 
                     buf.flip();
 
-                    while (true) {
-                        buf.mark();
-
-                        if (!deserialize(buf, nodeId)) {
-                            buf.reset();
-
-                            if (forwardRead != null)
-                                forwardRead.resetBuf = true;
-
-                            break;
-                        }
-                        else if (forwardRead != null && forwardRead.found) {
+                    while (deserialize(buf, nodeId)) {
+                        if (forwardRead != null && forwardRead.found) {
                             if (forwardRead.resetBuf) {
                                 buf.limit(0);
 
@@ -181,6 +171,11 @@ public class FilePerformanceStatisticsReader {
                             forwardRead = null;
                         }
                     }
+
+                    buf.reset();
+
+                    if (forwardRead != null)
+                        forwardRead.resetBuf = true;
 
                     buf.compact();
                 }
@@ -197,6 +192,8 @@ public class FilePerformanceStatisticsReader {
      * @return {@code True} if operation deserialized. {@code False} if not enough bytes.
      */
     private boolean deserialize(ByteBuffer buf, UUID nodeId) throws IOException {
+        buf.mark();
+
         if (buf.remaining() < 1)
             return false;
 

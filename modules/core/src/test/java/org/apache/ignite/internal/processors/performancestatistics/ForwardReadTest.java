@@ -73,6 +73,8 @@ public class ForwardReadTest extends AbstractPerformanceStatisticsTest {
                 int affPartId) {
                 assertNotNull(taskName);
 
+                assertTrue(expTasks.containsKey(taskName));
+
                 expTasks.computeIfPresent(taskName, (name, cnt) -> --cnt);
             }
         }).read(singletonList(dir));

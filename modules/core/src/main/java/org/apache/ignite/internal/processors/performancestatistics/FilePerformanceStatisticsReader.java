@@ -156,7 +156,11 @@ public class FilePerformanceStatisticsReader {
 
                     buf.flip();
 
+                    buf.mark();
+
                     while (deserialize(buf, nodeId)) {
+                        buf.mark();
+
                         if (forwardRead != null && forwardRead.found) {
                             if (forwardRead.resetBuf) {
                                 buf.limit(0);
@@ -192,8 +196,6 @@ public class FilePerformanceStatisticsReader {
      * @return {@code True} if operation deserialized. {@code False} if not enough bytes.
      */
     private boolean deserialize(ByteBuffer buf, UUID nodeId) throws IOException {
-        buf.mark();
-
         if (buf.remaining() < 1)
             return false;
 

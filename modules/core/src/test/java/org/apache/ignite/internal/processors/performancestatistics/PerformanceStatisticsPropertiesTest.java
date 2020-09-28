@@ -82,8 +82,8 @@ public class PerformanceStatisticsPropertiesTest extends AbstractPerformanceStat
         AtomicInteger opsCnt = new AtomicInteger();
 
         stopCollectStatisticsAndRead(new TestHandler() {
-            @Override
-            public void cacheOperation(UUID nodeId, OperationType type, int cacheId, long startTime, long duration) {
+            @Override public void cacheOperation(UUID nodeId, OperationType type, int cacheId, long startTime,
+                long duration) {
                 opsCnt.incrementAndGet();
             }
         });

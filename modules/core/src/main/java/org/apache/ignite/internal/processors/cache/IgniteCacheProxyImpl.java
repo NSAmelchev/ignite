@@ -705,7 +705,7 @@ public class IgniteCacheProxyImpl<K, V> extends AsyncSupportAdapter<IgniteCache<
         try {
             boolean performanceStatsEnabled = ctx.kernalContext().performanceStatistics().enabled();
 
-            long startTime = performanceStatsEnabled ? System.currentTimeMillis() : 0;
+            long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
 
             final UUID routineId = ctx.continuousQueries().executeQuery(
                 locLsnr,

@@ -170,7 +170,7 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
 
     /**
      * @param routineId Routine id.
-     * @param evtCnt Events count.
+     * @param evtCnt Processed events count.
      */
     public void continuousQueryEvent(UUID routineId, int evtCnt) {
         write(writer -> writer.continuousQueryEvent(routineId, evtCnt));

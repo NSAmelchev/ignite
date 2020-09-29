@@ -100,7 +100,7 @@ public interface PerformanceStatisticsHandler {
     /**
      * @param nodeId Node id.
      * @param routineId Routine id.
-     * @param evtCnt Events count.
+     * @param evtCnt Processed events count.
      */
     void continuousQueryEvent(UUID nodeId, UUID routineId, int evtCnt);
 }

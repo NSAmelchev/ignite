@@ -703,6 +703,10 @@ public class IgniteCacheProxyImpl<K, V> extends AsyncSupportAdapter<IgniteCache<
         }
 
         try {
+            boolean performanceStatsEnabled = ctx.kernalContext().performanceStatistics().enabled();
+
+            long startTime = performanceStatsEnabled ? System.currentTimeMillis() : 0;
+
             final UUID routineId = ctx.continuousQueries().executeQuery(
                 locLsnr,
                 locTransLsnr,
@@ -737,6 +741,12 @@ public class IgniteCacheProxyImpl<K, V> extends AsyncSupportAdapter<IgniteCache<
                             ctx.kernalContext().continuous().stopRoutine(routineId).get();
                         } catch (IgniteCheckedException e) {
                             throw U.convertException(e);
+                        }
+                        finally {
+                            if (performanceStatsEnabled) {
+                                ctx.kernalContext().performanceStatistics().continuousQuery(routineId, ctx.cacheId(),
+                                    startTime, U.currentTimeMillis() - startTime);
+                            }
                         }
                     }
 

@@ -1136,6 +1136,9 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
         if (locTransLsnr != null)
             locTransLsnr.onUpdated(transform(trans, evts));
+
+        if (ctx.performanceStatistics().enabled())
+            ctx.performanceStatistics().continuousQueryEvent(routineId, evts.size());
     }
 
     /**

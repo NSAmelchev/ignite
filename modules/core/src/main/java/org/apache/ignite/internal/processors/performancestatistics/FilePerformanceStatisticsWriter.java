@@ -50,6 +50,8 @@ import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_BUFFER_S
 import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_CACHED_STRINGS_THRESHOLD;
 import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_FILE_MAX_SIZE;
 import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_FLUSH_SIZE;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_EVENT;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.JOB;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY_READS;
@@ -57,6 +59,8 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.TX_COMMIT;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.TX_ROLLBACK;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.cacheRecordSize;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEventRecordSize;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.jobRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.queryReadsRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.queryRecordSize;
@@ -291,6 +295,32 @@ public class FilePerformanceStatisticsWriter {
             buf.putLong(startTime);
             buf.putLong(duration);
             buf.put(timedOut ? (byte)1 : 0);
+        });
+    }
+
+    /**
+     * @param routineId Routine id.
+     * @param cacheId Cache id.
+     * @param startTime Start time in milliseconds.
+     * @param duration Duration in milliseconds.
+     */
+    public void continuousQuery(UUID routineId, int cacheId, long startTime, long duration) {
+        doWrite(CQ, continuousQueryRecordSize(), buf -> {
+            writeUuid(buf, routineId);
+            buf.putInt(cacheId);
+            buf.putLong(startTime);
+            buf.putLong(duration);
+        });
+    }
+
+    /**
+     * @param routineId Routine id.
+     * @param evtCnt Events count.
+     */
+    public void continuousQueryEvent(UUID routineId, int evtCnt) {
+        doWrite(CQ_EVENT, continuousQueryEventRecordSize(), buf -> {
+            writeUuid(buf, routineId);
+            buf.putInt(evtCnt);
         });
     }
 

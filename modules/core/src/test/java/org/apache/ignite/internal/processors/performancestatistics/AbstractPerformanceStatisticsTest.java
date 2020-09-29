@@ -173,6 +173,16 @@ public abstract class AbstractPerformanceStatisticsTest extends GridCommonAbstra
             boolean timedOut) {
             // No-op.
         }
+
+        /** {@inheritDoc} */
+        @Override public void continuousQuery(UUID nodeId, UUID routineId, int cacheId, long startTime, long duration) {
+            // No-op.
+        }
+
+        /** {@inheritDoc} */
+        @Override public void continuousQueryEvent(UUID nodeId, UUID routineId, int evtCnt) {
+            // No-op.
+        }
     }
 
     /** Client type to run load from. */

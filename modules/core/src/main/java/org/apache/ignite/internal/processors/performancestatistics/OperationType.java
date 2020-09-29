@@ -76,7 +76,13 @@ public enum OperationType {
     TASK(15),
 
     /** Job. */
-    JOB(16);
+    JOB(16),
+
+    /** Cache continuous query. */
+    CQ(17),
+
+    /** Cache continuous query event. */
+    CQ_EVENT(18);
 
     /** Cache operations. */
     public static final EnumSet<OperationType> CACHE_OPS = EnumSet.of(CACHE_GET, CACHE_PUT, CACHE_REMOVE,
@@ -169,5 +175,15 @@ public enum OperationType {
     /** @return Job record size. */
     public static int jobRecordSize() {
         return 24 + 8 + 8 + 8 + 1;
+    }
+
+    /** @return Continuous query record size. */
+    public static int continuousQueryRecordSize() {
+        return 16 + 4 + 8 + 8;
+    }
+
+    /** @return Continuous query event record size. */
+    public static int continuousQueryEventRecordSize() {
+        return 16 + 4;
     }
 }

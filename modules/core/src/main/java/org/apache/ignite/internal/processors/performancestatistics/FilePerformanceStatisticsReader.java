@@ -47,6 +47,8 @@ import org.jetbrains.annotations.Nullable;
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.file.Files.walkFileTree;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_EVENT;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.JOB;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY_READS;
@@ -54,6 +56,8 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.TX_COMMIT;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.cacheOperation;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.cacheRecordSize;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEventRecordSize;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.jobRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.queryReadsRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.queryRecordSize;
@@ -356,6 +360,32 @@ public class FilePerformanceStatisticsReader {
 
             for (PerformanceStatisticsHandler handler : curHnd)
                 handler.job(nodeId, sesId, queuedTime, startTime, duration, timedOut);
+
+            return true;
+        }
+        else if (opType == CQ) {
+            if (buf.remaining() < continuousQueryRecordSize())
+                return false;
+
+            UUID routineId = readUuid(buf);
+            int cacheId = buf.getInt();
+            long startTime = buf.getLong();
+            long duration = buf.getLong();
+
+            for (PerformanceStatisticsHandler handler : curHnd)
+                handler.continuousQuery(nodeId, routineId, cacheId, startTime, duration);
+
+            return true;
+        }
+        else if (opType == CQ_EVENT) {
+            if (buf.remaining() < continuousQueryEventRecordSize())
+                return false;
+
+            UUID routineId = readUuid(buf);
+            int evtCnt = buf.getInt();
+
+            for (PerformanceStatisticsHandler handler : curHnd)
+                handler.continuousQueryEvent(nodeId, routineId, evtCnt);
 
             return true;
         }

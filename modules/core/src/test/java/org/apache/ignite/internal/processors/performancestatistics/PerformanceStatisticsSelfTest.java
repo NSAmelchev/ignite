@@ -21,17 +21,23 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Consumer;
+import javax.cache.Cache;
 import javax.cache.processor.EntryProcessor;
 import javax.cache.processor.EntryProcessorException;
 import javax.cache.processor.MutableEntry;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.cache.CacheEntryProcessor;
+import org.apache.ignite.cache.query.ContinuousQuery;
+import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteEx;
+import org.apache.ignite.internal.IgniteInternalFuture;
 import org.apache.ignite.internal.util.GridIntList;
 import org.apache.ignite.internal.util.typedef.internal.CU;
 import org.apache.ignite.internal.util.typedef.internal.U;
@@ -55,6 +61,7 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_PUT_ALL;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_REMOVE;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_REMOVE_ALL;
+import static org.apache.ignite.testframework.GridTestUtils.runMultiThreadedAsync;
 
 /**
  * Tests performance statistics.
@@ -126,6 +133,13 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
 
         for (int i = 0; i < ENTRY_COUNT; i++)
             cache.put(i, i);
+    }
+
+    /** {@inheritDoc} */
+    @Override protected void afterTest() throws Exception {
+        super.afterTest();
+
+        cache.clear();
     }
 
     /** @throws Exception If failed. */
@@ -314,5 +328,70 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
         });
 
         assertEquals(1, txs.get());
+    }
+
+    /** @throws Exception If failed. */
+    @Test
+    public void testContinousQuery() throws Exception {
+        int qryCnt = 5;
+        int entryCnt = 10;
+
+        CountDownLatch evtLatch = new CountDownLatch(qryCnt * entryCnt);
+
+        ContinuousQuery<Object, Object> qry = new ContinuousQuery<>()
+            .setLocalListener(evts -> evts.forEach(event -> evtLatch.countDown()))
+            .setPageSize(entryCnt / 2);
+
+        startCollectStatistics();
+
+        long startTime = U.currentTimeMillis();
+
+        CountDownLatch started = new CountDownLatch(qryCnt);
+
+        IgniteInternalFuture<Long> fut = runMultiThreadedAsync(() -> {
+            try (QueryCursor<Cache.Entry<Object, Object>> cur = cache.query(qry)) {
+                started.countDown();
+
+                evtLatch.await();
+            }
+
+            return null;
+        }, qryCnt, "queries");
+
+        started.await();
+
+        for (int i = 0; i < entryCnt; i++)
+            cache.put(i, i);
+
+        fut.get();
+
+        HashMap<UUID, Integer> evts = new HashMap<>();
+        HashSet<UUID> ids = new HashSet<>();
+
+        stopCollectStatisticsAndRead(new TestHandler() {
+            @Override public void continuousQuery(UUID nodeId, UUID routineId, int cacheId, long qryStartTime,
+                long duration) {
+                ids.add(routineId);
+
+                assertEquals(node.context().localNodeId(), nodeId);
+                assertEquals(CU.cacheId(DEFAULT_CACHE_NAME), cacheId);
+                assertTrue(qryStartTime >= startTime);
+                assertTrue(duration >= 0);
+            }
+
+            @Override public void continuousQueryEvent(UUID nodeId, UUID routineId, int evtCnt) {
+                evts.compute(routineId, (uuid, cnt) -> cnt == null ? evtCnt : cnt + evtCnt);
+
+                assertEquals(node.context().localNodeId(), nodeId);
+            }
+        });
+
+        assertEquals(qryCnt, evts.keySet().size());
+        assertTrue(evts.values().stream().allMatch(cnt -> cnt == entryCnt));
+        assertEquals(qryCnt, ids.size());
+
+        evts.keySet().removeAll(ids);
+
+        assertTrue(evts.isEmpty());
     }
 }

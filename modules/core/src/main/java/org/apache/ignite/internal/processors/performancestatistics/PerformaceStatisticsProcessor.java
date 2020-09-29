@@ -159,6 +159,24 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
     }
 
     /**
+     * @param routineId Routine id.
+     * @param cacheId Cache id.
+     * @param startTime Start time in milliseconds.
+     * @param duration Duration in milliseconds.
+     */
+    public void continuousQuery(UUID routineId, int cacheId, long startTime, long duration) {
+        write(writer -> writer.continuousQuery(routineId, cacheId, startTime, duration));
+    }
+
+    /**
+     * @param routineId Routine id.
+     * @param evtCnt Events count.
+     */
+    public void continuousQueryEvent(UUID routineId, int evtCnt) {
+        write(writer -> writer.continuousQueryEvent(routineId, evtCnt));
+    }
+
+    /**
      * Starts collecting performance statistics.
      *
      * @throws IgniteCheckedException If starting failed.

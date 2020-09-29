@@ -87,4 +87,20 @@ public interface PerformanceStatisticsHandler {
      * @param timedOut {@code True} if job is timed out.
      */
     void job(UUID nodeId, IgniteUuid sesId, long queuedTime, long startTime, long duration, boolean timedOut);
+
+    /**
+     * @param nodeId Node id.
+     * @param routineId Routine id.
+     * @param cacheId Cache id.
+     * @param startTime Start time in milliseconds.
+     * @param duration Duration in milliseconds.
+     */
+    void continuousQuery(UUID nodeId, UUID routineId, int cacheId, long startTime, long duration);
+
+    /**
+     * @param nodeId Node id.
+     * @param routineId Routine id.
+     * @param evtCnt Events count.
+     */
+    void continuousQueryEvent(UUID nodeId, UUID routineId, int evtCnt);
 }

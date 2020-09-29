@@ -365,8 +365,8 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
 
         fut.get();
 
-        HashMap<UUID, Integer> evts = new HashMap<>();
         HashSet<UUID> ids = new HashSet<>();
+        HashMap<UUID, Integer> evts = new HashMap<>();
 
         stopCollectStatisticsAndRead(new TestHandler() {
             @Override public void continuousQuery(UUID nodeId, UUID routineId, int cacheId, long qryStartTime,

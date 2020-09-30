@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import javax.cache.configuration.Factory;
 import javax.cache.event.CacheEntryEvent;
 import javax.cache.event.CacheEntryEventFilter;
 import javax.cache.event.CacheEntryListener;
@@ -787,8 +788,23 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
      *
      * @return Cache entry event filter.
      */
-    protected CacheEntryEventFilter getEventFilter0() {
+    public CacheEntryEventFilter getEventFilter0() {
         return rmtFilter;
+    }
+
+    /**
+     * @return Remote filter factory.
+     */
+    @Nullable public Factory<? extends CacheEntryEventFilter> getRemoteFilterFactory() {
+        return null;
+    }
+
+    /**
+     * @return Remote transformer factory.
+     */
+    @Nullable public Factory<? extends IgniteClosure<CacheEntryEvent<? extends K, ? extends V>, ?>>
+    getRemoteTransformerFactory() {
+        return null;
     }
 
     /**

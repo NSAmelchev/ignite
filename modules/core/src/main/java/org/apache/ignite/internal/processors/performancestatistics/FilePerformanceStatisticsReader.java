@@ -364,16 +364,72 @@ public class FilePerformanceStatisticsReader {
             return true;
         }
         else if (opType == CQ) {
-            if (buf.remaining() < continuousQueryRecordSize())
+            if (buf.remaining() < 1)
                 return false;
+
+            boolean cached = buf.get() != 0;
+
+            String lsnr;
+            int lsnrHash = 0;
+            String rmtFilter;
+            int rmtFilterHash = 0;
+            String rmtTrans;
+            int rmtTransHash = 0;
+
+            if (cached) {
+                if (buf.remaining() < continuousQueryRecordSize(0, 0, 0, true) - 1)
+                    return false;
+
+                lsnrHash = buf.getInt();
+                lsnr = knownStrs.get(lsnrHash);
+
+                rmtFilterHash = buf.getInt();
+                rmtFilter = knownStrs.get(rmtFilterHash);
+
+                rmtTransHash = buf.getInt();
+                rmtTrans = knownStrs.get(rmtTransHash);
+            }
+            else {
+                if (buf.remaining() < continuousQueryRecordSize(0, 0, 0, false) - 1)
+                    return false;
+
+                int lsnrLen = buf.getInt();
+
+                if (buf.remaining() < continuousQueryRecordSize(lsnrLen, 0, 0, false) - 1 - 4)
+                    return false;
+
+                lsnr = readString(buf, lsnrLen);
+
+                int rmtFilterLen = buf.getInt();
+
+                if (buf.remaining() < continuousQueryRecordSize(rmtFilterLen, rmtFilterLen, 0, false) - 1 - 4 - 4)
+                    return false;
+
+                rmtFilter = readString(buf, rmtFilterLen);
+
+                int rmtTransLen = buf.getInt();
+
+                if (buf.remaining() < continuousQueryRecordSize(rmtTransLen, rmtFilterLen, rmtTransLen, false) - 1 - 4 - 4 - 4)
+                    return false;
+
+                rmtTrans = readString(buf, rmtTransLen);
+            }
 
             UUID routineId = readUuid(buf);
             int cacheId = buf.getInt();
             long startTime = buf.getLong();
-            long duration = buf.getLong();
+
+            if (lsnr == null)
+                forwardRead(lsnrHash);
+
+            if (rmtFilter == null)
+                forwardRead(rmtFilterHash);
+
+            if (rmtTrans == null)
+                forwardRead(rmtTransHash);
 
             for (PerformanceStatisticsHandler handler : curHnd)
-                handler.continuousQuery(nodeId, routineId, cacheId, startTime, duration);
+                handler.continuousQuery(nodeId, routineId, cacheId, startTime, lsnr, rmtFilter, rmtTrans);
 
             return true;
         }

@@ -162,10 +162,13 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
      * @param routineId Routine id.
      * @param cacheId Cache id.
      * @param startTime Start time in milliseconds.
-     * @param duration Duration in milliseconds.
+     * @param lsnr Local listener class name.
+     * @param rmtFilter Remote filter factory class name.
+     * @param rmtTrans Remote transformer factory class name.
      */
-    public void continuousQuery(UUID routineId, int cacheId, long startTime, long duration) {
-        write(writer -> writer.continuousQuery(routineId, cacheId, startTime, duration));
+    public void continuousQuery(UUID routineId, int cacheId, long startTime, String lsnr, String rmtFilter,
+        String rmtTrans) {
+        write(writer -> writer.continuousQuery(routineId, cacheId, startTime, lsnr, rmtFilter, rmtTrans));
     }
 
     /**

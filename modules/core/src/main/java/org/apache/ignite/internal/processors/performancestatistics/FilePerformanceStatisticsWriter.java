@@ -236,7 +236,7 @@ public class FilePerformanceStatisticsWriter {
         boolean cached = cacheIfPossible(text);
 
         doWrite(QUERY, queryRecordSize(cached ? 0 : text.getBytes().length, cached), buf -> {
-            writeString(buf, text, cached);
+            writeStrings(buf, cached, text);
             buf.put((byte)type.ordinal());
             buf.putLong(id);
             buf.putLong(startTime);
@@ -273,7 +273,7 @@ public class FilePerformanceStatisticsWriter {
         boolean cached = cacheIfPossible(taskName);
 
         doWrite(TASK, taskRecordSize(cached ? 0 : taskName.getBytes().length, cached), buf -> {
-            writeString(buf, taskName, cached);
+            writeStrings(buf, cached, taskName);
             writeIgniteUuid(buf, sesId);
             buf.putLong(startTime);
             buf.putLong(duration);
@@ -302,15 +302,23 @@ public class FilePerformanceStatisticsWriter {
      * @param routineId Routine id.
      * @param cacheId Cache id.
      * @param startTime Start time in milliseconds.
-     * @param duration Duration in milliseconds.
+     * @param lsnr Local listener class name.
+     * @param rmtFilter Remote filter factory class name.
+     * @param rmtTrans Remote transformer factory class name.
      */
-    public void continuousQuery(UUID routineId, int cacheId, long startTime, long duration) {
-        doWrite(CQ, continuousQueryRecordSize(), buf -> {
-            writeUuid(buf, routineId);
-            buf.putInt(cacheId);
-            buf.putLong(startTime);
-            buf.putLong(duration);
-        });
+    public void continuousQuery(UUID routineId, int cacheId, long startTime, String lsnr, String rmtFilter,
+        String rmtTrans) {
+        boolean cached = cacheIfPossible(lsnr) && cacheIfPossible(rmtFilter) && cacheIfPossible(rmtTrans);
+
+        doWrite(CQ,
+            continuousQueryRecordSize(cached ? 0 : lsnr.getBytes().length, cached ? 0 : rmtFilter.getBytes().length,
+                cached ? 0 : rmtTrans.getBytes().length, cached),
+            buf -> {
+                writeStrings(buf, cached, lsnr, rmtFilter, rmtTrans);
+                writeUuid(buf, routineId);
+                buf.putInt(cacheId);
+                buf.putLong(startTime);
+            });
     }
 
     /**
@@ -405,19 +413,21 @@ public class FilePerformanceStatisticsWriter {
 
     /**
      * @param buf Buffer to write to.
-     * @param str String to write.
      * @param cached {@code True} if string cached.
+     * @param strs Strings to write.
      */
-    static void writeString(ByteBuffer buf, String str, boolean cached) {
+    static void writeStrings(ByteBuffer buf, boolean cached, String... strs) {
         buf.put(cached ? (byte)1 : 0);
 
-        if (cached)
-            buf.putInt(str.hashCode());
-        else {
-            byte[] bytes = str.getBytes();
+        for (String str : strs) {
+            if (cached)
+                buf.putInt(str.hashCode());
+            else {
+                byte[] bytes = str.getBytes();
 
-            buf.putInt(bytes.length);
-            buf.put(bytes);
+                buf.putInt(bytes.length);
+                buf.put(bytes);
+            }
         }
     }
 

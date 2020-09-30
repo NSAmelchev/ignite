@@ -178,8 +178,8 @@ public enum OperationType {
     }
 
     /** @return Continuous query record size. */
-    public static int continuousQueryRecordSize() {
-        return 16 + 4 + 8 + 8;
+    public static int continuousQueryRecordSize(int lsnrLen, int rmtFilterLen, int rmtTransLen, boolean cached) {
+        return 1 + (cached ? 4 + 4 + 4 : 4 + lsnrLen + 4 + rmtFilterLen + 4 + rmtTransLen) + 16 + 4 + 8;
     }
 
     /** @return Continuous query event record size. */

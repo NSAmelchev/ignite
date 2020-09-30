@@ -41,7 +41,7 @@ import static java.util.Collections.singletonList;
 import static java.util.UUID.randomUUID;
 import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsWriter.PERF_STAT_DIR;
 import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsWriter.writeIgniteUuid;
-import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsWriter.writeString;
+import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsWriter.writeStrings;
 
 /**
  * Tests strings caching.
@@ -138,7 +138,7 @@ public class ForwardReadTest extends AbstractPerformanceStatisticsTest {
     /** Writes test task to buffer. */
     private static void writeTask(ByteBuffer buf, String taskName, boolean cached) {
         buf.put((byte)OperationType.TASK.ordinal());
-        writeString(buf, taskName, cached);
+        writeStrings(buf, cached, taskName);
         writeIgniteUuid(buf, IgniteUuid.randomUuid());
         buf.putLong(0);
         buf.putLong(0);

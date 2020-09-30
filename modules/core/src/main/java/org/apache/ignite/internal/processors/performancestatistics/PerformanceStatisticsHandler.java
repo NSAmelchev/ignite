@@ -93,9 +93,12 @@ public interface PerformanceStatisticsHandler {
      * @param routineId Routine id.
      * @param cacheId Cache id.
      * @param startTime Start time in milliseconds.
-     * @param duration Duration in milliseconds.
+     * @param lsnrCls Local listener class name.
+     * @param rmtFilterCls Remote filter factory class name.
+     * @param rmtTransCls Remote transformer factory class name.
      */
-    void continuousQuery(UUID nodeId, UUID routineId, int cacheId, long startTime, long duration);
+    void continuousQuery(UUID nodeId, UUID routineId, int cacheId, long startTime, String lsnrCls, String rmtFilterCls,
+        String rmtTransCls);
 
     /**
      * @param nodeId Node id.

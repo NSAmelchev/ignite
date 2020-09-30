@@ -80,6 +80,7 @@ import org.apache.ignite.internal.util.tostring.GridToStringInclude;
 import org.apache.ignite.internal.util.typedef.CI1;
 import org.apache.ignite.internal.util.typedef.F;
 import org.apache.ignite.internal.util.typedef.T2;
+import org.apache.ignite.internal.util.typedef.internal.CU;
 import org.apache.ignite.internal.util.typedef.internal.LT;
 import org.apache.ignite.internal.util.typedef.internal.S;
 import org.apache.ignite.internal.util.typedef.internal.U;
@@ -1296,6 +1297,32 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
                 ", locInfos=" + locInfos +
                 ", clientInfos=" + clientInfos + ']');
         }
+    }
+
+    /**
+     * Writes performace statistics.
+     *
+     * @param routineId Routine id.
+     */
+    public void writeStatistics(UUID routineId) {
+        LocalRoutineInfo info = locInfos.get(routineId);
+
+        if (info == null || !(info.hnd instanceof CacheContinuousQueryHandler))
+            return;
+
+        CacheContinuousQueryHandler<?, ?> hnd = (CacheContinuousQueryHandler<?, ?>)info.hnd;
+
+        String lsnr = hnd.localTransformedEventListener() != null ? hnd.localTransformedEventListener().getClass().getName() :
+            hnd.localListener() != null ? hnd.localListener().getClass().getName() : "";
+
+        String rmtFilter = hnd.getRemoteFilterFactory() != null ? hnd.getRemoteFilterFactory().getClass().getName() :
+            hnd.getEventFilter0() != null ? hnd.getEventFilter0().getClass().getName() : "";
+
+        String rmtTrans = hnd.getRemoteTransformerFactory() != null ?
+            hnd.getRemoteTransformerFactory().getClass().getName() : "";
+
+        ctx.performanceStatistics().continuousQuery(routineId, CU.cacheId(info.hnd.cacheName()),
+            U.currentTimeMillis(), lsnr, rmtFilter, rmtTrans);
     }
 
     /**

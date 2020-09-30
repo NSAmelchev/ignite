@@ -82,7 +82,13 @@ public enum OperationType {
     CQ(17),
 
     /** Cache continuous query event. */
-    CQ_EVENT(18);
+    CQ_ENTRY_FILTERED(18),
+
+    /** Cache continuous query event. */
+    CQ_ENTRY_TRANSFORMED(19),
+
+    /** Cache continuous query event. */
+    CQ_ENTRY_PROCESSED(20);
 
     /** Cache operations. */
     public static final EnumSet<OperationType> CACHE_OPS = EnumSet.of(CACHE_GET, CACHE_PUT, CACHE_REMOVE,

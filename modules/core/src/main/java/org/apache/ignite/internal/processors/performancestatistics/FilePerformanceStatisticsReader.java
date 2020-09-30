@@ -48,7 +48,7 @@ import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.file.Files.walkFileTree;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ;
-import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_EVENT;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_FILTERED;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.JOB;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY_READS;
@@ -433,7 +433,7 @@ public class FilePerformanceStatisticsReader {
 
             return true;
         }
-        else if (opType == CQ_EVENT) {
+        else if (opType == CQ_ENTRY_FILTERED) {
             if (buf.remaining() < continuousQueryEventRecordSize())
                 return false;
 

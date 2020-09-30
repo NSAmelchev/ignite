@@ -33,6 +33,7 @@ import org.apache.ignite.internal.processors.metastorage.DistributedMetastorageL
 import org.apache.ignite.internal.processors.metastorage.ReadableDistributedMetaStorage;
 import org.apache.ignite.internal.util.GridIntList;
 import org.apache.ignite.internal.util.typedef.internal.A;
+import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.lang.IgniteFuture;
 import org.apache.ignite.lang.IgniteUuid;
 import org.jetbrains.annotations.Nullable;
@@ -178,10 +179,29 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
 
     /**
      * @param routineId Routine id.
-     * @param evtCnt Processed events count.
+     * @param startTime Start time in milliseconds.
+     * @param duration Duration in nanoseconds.
      */
-    public void continuousQueryEvent(UUID routineId, int evtCnt) {
-        write(writer -> writer.continuousQueryEvent(routineId, evtCnt));
+    public void continuousQueryEntryFiltered(UUID routineId, long startTime, long duration) {
+        System.out.println("MY Filtered " + U.nanosToMillis(duration) + " ms");
+    }
+
+    /**
+     * @param routineId Routine id.
+     * @param startTime Start time in milliseconds.
+     * @param duration Duration in nanoseconds.
+     */
+    public void continuousQueryEntryTransformed(UUID routineId, long startTime, long duration) {
+        System.out.println("MY Transformed " + U.nanosToMillis(duration) + " ms");
+    }
+
+    /**
+     * @param routineId Routine id.
+     * @param startTime Start time in milliseconds.
+     * @param duration Duration in nanoseconds.
+     */
+    public void continuousQueryEntryProcessed(UUID routineId, long startTime, long duration) {
+        System.out.println("MY Processed " + U.nanosToMillis(duration) + " ms");
     }
 
     /**

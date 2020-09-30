@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.cache.configuration.Factory;
 import javax.cache.event.CacheEntryEvent;
 import javax.cache.event.CacheEntryEventFilter;
@@ -1024,12 +1025,26 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
         boolean notify = !entry.isFiltered();
 
+        boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();
+
+        long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
+        long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
+
+        CacheEntryEventFilter filter = null;
+
         try {
-            if (notify && getEventFilter() != null)
-                notify = getEventFilter().evaluate(evt);
+            filter = getEventFilter();
+
+            if (notify && filter != null)
+                notify = filter.evaluate(evt);
         }
         catch (Exception e) {
             U.error(log, "CacheEntryEventFilter failed: " + e);
+        }
+
+        if (performanceStatsEnabled && notify && filter != null) {
+            ctx.performanceStatistics().continuousQueryEntryFiltered(routineId, startTime,
+                System.nanoTime() - startTimeNanos);
         }
 
         if (!notify)
@@ -1147,14 +1162,55 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         if (F.isEmpty(evts))
             return;
 
-        if (locLsnr != null)
+        boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();
+
+        long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
+        long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
+        long duration = 0;
+
+        if (locLsnr != null) {
             locLsnr.onUpdated(evts);
 
-        if (locTransLsnr != null)
-            locTransLsnr.onUpdated(transform(trans, evts));
+            if (performanceStatsEnabled)
+                duration = System.nanoTime() - startTimeNanos;
+        }
 
-        if (ctx.performanceStatistics().enabled())
-            ctx.performanceStatistics().continuousQueryEvent(routineId, evts.size());
+        if (locTransLsnr != null) {
+            Iterable transEvts = transform(trans, evts);
+
+            if (performanceStatsEnabled) {
+                Iterator iter = transEvts.iterator();
+
+                AtomicLong transDurartion = new AtomicLong();
+
+                locTransLsnr.onUpdated(new Iterable() {
+                    @NotNull @Override public Iterator iterator() {
+                        return new Iterator() {
+                            @Override public boolean hasNext() {
+                                return iter.hasNext();
+                            }
+
+                            @Override public Object next() {
+                                long startTimeNanos = System.nanoTime();
+
+                                Object next = iter.next();
+
+                                transDurartion.addAndGet(System.nanoTime() - startTimeNanos);
+
+                                return next;
+                            }
+                        };
+                    }
+                });
+
+                duration = System.nanoTime() - startTimeNanos - transDurartion.get();
+            }
+            else
+                locTransLsnr.onUpdated(transEvts);
+        }
+
+        if (performanceStatsEnabled)
+            ctx.performanceStatistics().continuousQueryEntryProcessed(routineId, startTime, duration);
     }
 
     /**
@@ -1606,6 +1662,11 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         CacheEntryEvent<? extends K, ? extends V> evt) {
         assert trans != null;
 
+        boolean performanceStatsEnabled = ctx.performanceStatistics().enabled() && !trans.equals(returnValTrans);
+
+        long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
+        long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
+
         Object transVal = null;
 
         try {
@@ -1613,6 +1674,13 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         }
         catch (Exception e) {
             U.error(log, e);
+        }
+
+        if (performanceStatsEnabled) {
+            System.out.println("MY TRANSFORM evt="+evt + " transVal="+transVal + " n="+ctx.localNodeId());
+
+            ctx.performanceStatistics().continuousQueryEntryTransformed(routineId, startTime,
+                System.nanoTime() - startTimeNanos);
         }
 
         return transVal;

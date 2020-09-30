@@ -51,7 +51,7 @@ import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_CACHED_S
 import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_FILE_MAX_SIZE;
 import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_FLUSH_SIZE;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ;
-import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_EVENT;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_FILTERED;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.JOB;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY_READS;
@@ -326,7 +326,7 @@ public class FilePerformanceStatisticsWriter {
      * @param evtCnt Events count.
      */
     public void continuousQueryEvent(UUID routineId, int evtCnt) {
-        doWrite(CQ_EVENT, continuousQueryEventRecordSize(), buf -> {
+        doWrite(CQ_ENTRY_FILTERED, continuousQueryEventRecordSize(), buf -> {
             writeUuid(buf, routineId);
             buf.putInt(evtCnt);
         });

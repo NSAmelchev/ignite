@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.processors.performancestatistics;
 
+import java.util.ArrayList;
+import java.util.EventListener;
 import java.util.UUID;
 import java.util.function.Consumer;
 import org.apache.ignite.IgniteCheckedException;
@@ -58,6 +60,9 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
 
     /** Synchronization mutex for start/stop collecting performance statistics operations. */
     private final Object mux = new Object();
+
+    /** Start performance statistics listeners. */
+    private final ArrayList<PerformanceStatisticsStateListener> lsnrs = new ArrayList<>();
 
     /** @param ctx Kernal context. */
     public PerformaceStatisticsProcessor(GridKernalContext ctx) {
@@ -227,6 +232,11 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
             stopWriter();
     }
 
+    /** Registers state listener. */
+    public void registerStateListener(PerformanceStatisticsStateListener lsnr) {
+        lsnrs.add(lsnr);
+    }
+
     /** Starts or stops collecting statistics on metastorage update. */
     private void onMetastorageUpdate(boolean start) {
         ctx.closure().runLocalSafe(() -> {
@@ -248,6 +258,8 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
 
                 writer.start();
             }
+
+            lsnrs.forEach(PerformanceStatisticsStateListener::onStarted);
 
             log.info("Performance statistics writer started.");
         }
@@ -278,5 +290,11 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
 
         if (writer != null)
             c.accept(writer);
+    }
+
+    /** Performance statistics state listener. */
+    public interface PerformanceStatisticsStateListener extends EventListener {
+        /** This method is called whenever the performance statistics collecting is started. */
+        public void onStarted();
     }
 }

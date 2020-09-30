@@ -716,8 +716,6 @@ public class IgniteCacheProxyImpl<K, V> extends AsyncSupportAdapter<IgniteCache<
                 keepBinary,
                 qry.isIncludeExpired());
 
-            ctx.kernalContext().continuous().writeStatistics(routineId);
-
             try {
                 final QueryCursor<Cache.Entry<K, V>> cur =
                         qry.getInitialQuery() != null ? query(qry.getInitialQuery()) : null;

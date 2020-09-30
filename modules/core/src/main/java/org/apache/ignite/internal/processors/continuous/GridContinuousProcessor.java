@@ -316,6 +316,9 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
         if (ctx.service() instanceof GridServiceProcessor)
             ((GridServiceProcessor)ctx.service()).onContinuousProcessorStarted(ctx);
 
+        ctx.performanceStatistics().registerStateListener(
+            () -> locInfos.forEach((uuid, info) -> writeStatistics(uuid, info.hnd)));
+
         if (log.isDebugEnabled())
             log.debug("Continuous processor started.");
     }
@@ -878,6 +881,8 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
         locInfos.put(routineId,
             new LocalRoutineInfo(ctx.localNodeId(), prjPred, hnd, bufSize, interval, autoUnsubscribe));
 
+        writeStatistics(routineId, hnd);
+
         if (locOnly) {
             try {
                 registerHandler(ctx.localNodeId(), routineId, hnd, bufSize, interval, autoUnsubscribe, true);
@@ -1300,17 +1305,16 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
     }
 
     /**
-     * Writes performace statistics.
+     * Writes cache continuous query performance statistics.
      *
      * @param routineId Routine id.
+     * @param queryHnd Continuous query handler.
      */
-    public void writeStatistics(UUID routineId) {
-        LocalRoutineInfo info = locInfos.get(routineId);
-
-        if (info == null || !(info.hnd instanceof CacheContinuousQueryHandler))
+    public void writeStatistics(UUID routineId, GridContinuousHandler queryHnd) {
+        if (!(queryHnd instanceof CacheContinuousQueryHandler))
             return;
 
-        CacheContinuousQueryHandler<?, ?> hnd = (CacheContinuousQueryHandler<?, ?>)info.hnd;
+        CacheContinuousQueryHandler<?, ?> hnd = (CacheContinuousQueryHandler<?, ?>)queryHnd;
 
         String lsnr = hnd.localTransformedEventListener() != null ? hnd.localTransformedEventListener().getClass().getName() :
             hnd.localListener() != null ? hnd.localListener().getClass().getName() : "";
@@ -1321,7 +1325,7 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
         String rmtTrans = hnd.getRemoteTransformerFactory() != null ?
             hnd.getRemoteTransformerFactory().getClass().getName() : "";
 
-        ctx.performanceStatistics().continuousQuery(routineId, CU.cacheId(info.hnd.cacheName()),
+        ctx.performanceStatistics().continuousQuery(routineId, CU.cacheId(hnd.cacheName()),
             U.currentTimeMillis(), lsnr, rmtFilter, rmtTrans);
     }
 

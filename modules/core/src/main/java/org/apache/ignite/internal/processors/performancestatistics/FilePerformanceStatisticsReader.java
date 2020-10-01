@@ -409,7 +409,8 @@ public class FilePerformanceStatisticsReader {
 
                 int rmtTransLen = buf.getInt();
 
-                if (buf.remaining() < continuousQueryRecordSize(rmtTransLen, rmtFilterLen, rmtTransLen, false) - 1 - 4 - 4 - 4)
+                if (buf.remaining() < continuousQueryRecordSize(rmtTransLen, rmtFilterLen, rmtTransLen, false) -
+                    1 - 4 - 4 - 4)
                     return false;
 
                 rmtTrans = readString(buf, rmtTransLen);

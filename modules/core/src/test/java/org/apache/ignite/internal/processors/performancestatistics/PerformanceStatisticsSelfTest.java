@@ -34,11 +34,14 @@ import javax.cache.processor.EntryProcessorException;
 import javax.cache.processor.MutableEntry;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.cache.CacheEntryProcessor;
+import org.apache.ignite.cache.query.AbstractContinuousQuery;
+import org.apache.ignite.cache.query.ContinuousQuery;
 import org.apache.ignite.cache.query.ContinuousQueryWithTransformer;
 import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.internal.util.GridIntList;
+import org.apache.ignite.internal.util.typedef.F;
 import org.apache.ignite.internal.util.typedef.internal.CU;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.lang.IgniteRunnable;
@@ -61,6 +64,7 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_PUT_ALL;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_REMOVE;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_REMOVE_ALL;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_FILTERED;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_OPS;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_PROCESSED;
 
@@ -334,17 +338,37 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
     /** @throws Exception If failed. */
     @Test
     public void testContinousQuery() throws Exception {
+        ContinuousQuery<Object, Object> qry = new ContinuousQuery<>();
+
+        checkContinousQuery(qry);
+    }
+
+    /** @throws Exception If failed. */
+    @Test
+    public void testContinousQueryWithTransformer() throws Exception {
+        ContinuousQueryWithTransformer<Object, Object, Object> qry = new ContinuousQueryWithTransformer<>();
+
+        qry.setRemoteTransformerFactory(() -> Cache.Entry::getValue);
+
+        checkContinousQuery(qry);
+    }
+
+    /** @throws Exception If failed. */
+    private void checkContinousQuery(AbstractContinuousQuery<Object, Object> qry) throws Exception {
         int qryCnt = 2;
         int entryCnt = 10;
         int pageSize = entryCnt / 2;
 
         CountDownLatch evtLatch = new CountDownLatch(qryCnt * entryCnt);
 
-        ContinuousQueryWithTransformer<Object, Object, Object> qry = new ContinuousQueryWithTransformer<>()
-            .setLocalListener(evts -> evts.forEach(event -> evtLatch.countDown()))
-            .setRemoteFilterFactory(() -> evt -> true)
-            .setRemoteTransformerFactory(() -> Cache.Entry::getValue)
-            .setPageSize(pageSize);
+        if (qry instanceof ContinuousQuery)
+            ((ContinuousQuery)qry).setLocalListener(evts -> evts.forEach(event -> evtLatch.countDown()));
+        else
+            ((ContinuousQueryWithTransformer)qry).setLocalListener(evts -> evts.forEach(event -> evtLatch.countDown()));
+
+        qry.setRemoteFilterFactory(() -> evt -> true);
+
+        qry.setPageSize(pageSize);
 
         long startTime = U.currentTimeMillis();
 
@@ -370,9 +394,16 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
                 assertEquals(node.context().localNodeId(), nodeId);
                 assertEquals(CU.cacheId(DEFAULT_CACHE_NAME), cacheId);
                 assertTrue(qryStartTime >= startTime);
-                assertEquals(qry.getLocalListener().getClass().getName(), lsnrCls);
                 assertEquals(qry.getRemoteFilterFactory().getClass().getName(), rmtFilterCls);
-                assertEquals(qry.getRemoteTransformerFactory().getClass().getName(), rmtTransCls);
+
+                if (qry instanceof ContinuousQuery)
+                    assertEquals(((ContinuousQuery)qry).getLocalListener().getClass().getName(), lsnrCls);
+                else {
+                    ContinuousQueryWithTransformer qryTrans = (ContinuousQueryWithTransformer)qry;
+
+                    assertEquals(qryTrans.getLocalListener().getClass().getName(), lsnrCls);
+                    assertEquals(qryTrans.getRemoteTransformerFactory().getClass().getName(), rmtTransCls);
+                }
             }
 
             @Override public void continuousQueryEntry(UUID nodeId, OperationType type, UUID routineId,
@@ -396,7 +427,12 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
 
         assertEquals(qryCnt, evts.keySet().size());
 
-        assertTrue(evts.values().stream().allMatch(map -> map.keySet().containsAll(CQ_ENTRY_OPS)));
+        if (qry instanceof ContinuousQueryWithTransformer)
+            assertTrue(evts.values().stream().allMatch(map -> map.keySet().containsAll(CQ_ENTRY_OPS)));
+        else {
+            assertTrue(evts.values().stream().allMatch(
+                map -> map.keySet().containsAll(F.asList(CQ_ENTRY_FILTERED, CQ_ENTRY_PROCESSED))));
+        }
 
         evts.values().forEach(map -> map.forEach((type, cnt) -> {
             if (type == CQ_ENTRY_PROCESSED)

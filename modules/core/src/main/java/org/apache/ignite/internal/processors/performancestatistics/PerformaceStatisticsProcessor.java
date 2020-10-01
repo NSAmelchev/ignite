@@ -61,7 +61,7 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
     /** Synchronization mutex for start/stop collecting performance statistics operations. */
     private final Object mux = new Object();
 
-    /** Start performance statistics listeners. */
+    /** Performance statistics state listeners. */
     private final ArrayList<PerformanceStatisticsStateListener> lsnrs = new ArrayList<>();
 
     /** @param ctx Kernal context. */

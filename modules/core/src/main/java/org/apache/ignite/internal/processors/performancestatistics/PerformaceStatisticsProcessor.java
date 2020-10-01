@@ -183,7 +183,8 @@ public class PerformaceStatisticsProcessor extends GridProcessorAdapter {
      * @param duration Duration in nanoseconds.
      * @param entCnt Entries count.
      */
-    public void continuousQueryOperation(OperationType type, UUID routineId, long startTime, long duration, int entCnt) {
+    public void continuousQueryOperation(OperationType type, UUID routineId, long startTime, long duration,
+        int entCnt) {
         write(writer -> writer.continuousQueryOperation(type, routineId, startTime, duration, entCnt));
     }
 

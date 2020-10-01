@@ -1184,7 +1184,7 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
             if (performanceStatsEnabled) {
                 Iterator iter = transEvts.iterator();
 
-                AtomicLong transDurartion = new AtomicLong();
+                AtomicLong transformDur = new AtomicLong();
 
                 locTransLsnr.onUpdated(new Iterable() {
                     @NotNull @Override public Iterator iterator() {
@@ -1198,7 +1198,7 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
                                 Object next = iter.next();
 
-                                transDurartion.addAndGet(System.nanoTime() - startTimeNanos);
+                                transformDur.addAndGet(System.nanoTime() - startTimeNanos);
 
                                 return next;
                             }
@@ -1206,7 +1206,7 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
                     }
                 });
 
-                duration = System.nanoTime() - startTimeNanos - transDurartion.get();
+                duration = System.nanoTime() - startTimeNanos - transformDur.get();
             }
             else
                 locTransLsnr.onUpdated(transEvts);

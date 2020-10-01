@@ -51,7 +51,6 @@ import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_CACHED_S
 import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_FILE_MAX_SIZE;
 import static org.apache.ignite.IgniteSystemProperties.IGNITE_PERF_STAT_FLUSH_SIZE;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ;
-import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_FILTERED;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.JOB;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY_READS;
@@ -59,7 +58,7 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.TX_COMMIT;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.TX_ROLLBACK;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.cacheRecordSize;
-import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEventRecordSize;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEntryRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.jobRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.queryReadsRecordSize;
@@ -322,13 +321,18 @@ public class FilePerformanceStatisticsWriter {
     }
 
     /**
+     * @param type Operation type.
      * @param routineId Routine id.
-     * @param evtCnt Events count.
+     * @param startTime Start time in milliseconds.
+     * @param duration Duration in nanoseconds.
+     * @param entCnt Entry count.
      */
-    public void continuousQueryEvent(UUID routineId, int evtCnt) {
-        doWrite(CQ_ENTRY_FILTERED, continuousQueryEventRecordSize(), buf -> {
+    public void continuousQueryEvent(OperationType type, UUID routineId, long startTime, long duration, int entCnt) {
+        doWrite(type, continuousQueryEntryRecordSize(), buf -> {
             writeUuid(buf, routineId);
-            buf.putInt(evtCnt);
+            buf.putLong(startTime);
+            buf.putLong(duration);
+            buf.putInt(entCnt);
         });
     }
 

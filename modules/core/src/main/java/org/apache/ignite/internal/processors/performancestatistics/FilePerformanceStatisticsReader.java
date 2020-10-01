@@ -48,7 +48,6 @@ import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.file.Files.walkFileTree;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ;
-import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_FILTERED;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.JOB;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.QUERY_READS;
@@ -56,7 +55,8 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.TX_COMMIT;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.cacheOperation;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.cacheRecordSize;
-import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEventRecordSize;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEntryOperation;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEntryRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.jobRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.queryReadsRecordSize;
@@ -433,15 +433,17 @@ public class FilePerformanceStatisticsReader {
 
             return true;
         }
-        else if (opType == CQ_ENTRY_FILTERED) {
-            if (buf.remaining() < continuousQueryEventRecordSize())
+        else if (continuousQueryEntryOperation(opType)) {
+            if (buf.remaining() < continuousQueryEntryRecordSize())
                 return false;
 
             UUID routineId = readUuid(buf);
-            int evtCnt = buf.getInt();
+            long startTime = buf.getLong();
+            long duration = buf.getLong();
+            int entCnt = buf.getInt();
 
             for (PerformanceStatisticsHandler handler : curHnd)
-                handler.continuousQueryEvent(nodeId, routineId, evtCnt);
+                handler.continuousQueryEntry(nodeId, opType, routineId, startTime, duration, entCnt);
 
             return true;
         }

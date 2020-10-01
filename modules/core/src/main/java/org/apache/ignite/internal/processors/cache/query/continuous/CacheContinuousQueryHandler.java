@@ -87,6 +87,9 @@ import static org.apache.ignite.events.EventType.EVT_CACHE_QUERY_EXECUTED;
 import static org.apache.ignite.events.EventType.EVT_CACHE_QUERY_OBJECT_READ;
 import static org.apache.ignite.internal.processors.cache.distributed.dht.preloader.CachePartitionPartialCountersMap.toCountersMap;
 import static org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryEntry.createFilteredEntry;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_FILTERED;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_PROCESSED;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_TRANSFORMED;
 
 /**
  * Continuous query handler.
@@ -1043,8 +1046,8 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         }
 
         if (performanceStatsEnabled && notify && filter != null) {
-            ctx.performanceStatistics().continuousQueryEntryFiltered(routineId, startTime,
-                System.nanoTime() - startTimeNanos);
+            ctx.performanceStatistics().continuousQueryEntry(CQ_ENTRY_FILTERED, routineId, startTime,
+                System.nanoTime() - startTimeNanos, 1);
         }
 
         if (!notify)
@@ -1209,8 +1212,10 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
                 locTransLsnr.onUpdated(transEvts);
         }
 
-        if (performanceStatsEnabled)
-            ctx.performanceStatistics().continuousQueryEntryProcessed(routineId, startTime, duration);
+        if (performanceStatsEnabled) {
+            ctx.performanceStatistics().continuousQueryEntry(CQ_ENTRY_PROCESSED, routineId, startTime, duration,
+                evts.size());
+        }
     }
 
     /**
@@ -1662,7 +1667,7 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         CacheEntryEvent<? extends K, ? extends V> evt) {
         assert trans != null;
 
-        boolean performanceStatsEnabled = ctx.performanceStatistics().enabled() && !trans.equals(returnValTrans);
+        boolean performanceStatsEnabled = ctx.performanceStatistics().enabled() && trans != returnValTrans;
 
         long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
         long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
@@ -1677,10 +1682,8 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         }
 
         if (performanceStatsEnabled) {
-            System.out.println("MY TRANSFORM evt="+evt + " transVal="+transVal + " n="+ctx.localNodeId());
-
-            ctx.performanceStatistics().continuousQueryEntryTransformed(routineId, startTime,
-                System.nanoTime() - startTimeNanos);
+            ctx.performanceStatistics().continuousQueryEntry(CQ_ENTRY_TRANSFORMED, routineId, startTime,
+                System.nanoTime() - startTimeNanos, 1);
         }
 
         return transVal;

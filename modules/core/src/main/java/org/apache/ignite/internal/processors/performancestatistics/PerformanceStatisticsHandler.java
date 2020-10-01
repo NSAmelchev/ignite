@@ -102,8 +102,12 @@ public interface PerformanceStatisticsHandler {
 
     /**
      * @param nodeId Node id.
+     * @param type Operation type.
      * @param routineId Routine id.
-     * @param evtCnt Processed events count.
+     * @param startTime Start time in milliseconds.
+     * @param duration Duration in nanoseconds.
+     * @param entCnt Entry count.
      */
-    void continuousQueryEvent(UUID nodeId, UUID routineId, int evtCnt);
+    void continuousQueryEntry(UUID nodeId, OperationType type, UUID routineId, long startTime, long duration,
+        int entCnt);
 }

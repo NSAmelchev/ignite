@@ -20,6 +20,7 @@ package org.apache.ignite.internal.processors.performancestatistics;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.UUID;
@@ -60,6 +61,8 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_PUT_ALL;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_REMOVE;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_REMOVE_ALL;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_OPS;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_PROCESSED;
 
 /**
  * Tests performance statistics.
@@ -333,14 +336,15 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
     public void testContinousQuery() throws Exception {
         int qryCnt = 2;
         int entryCnt = 10;
+        int pageSize = entryCnt / 2;
 
         CountDownLatch evtLatch = new CountDownLatch(qryCnt * entryCnt);
 
         ContinuousQueryWithTransformer<Object, Object, Object> qry = new ContinuousQueryWithTransformer<>()
             .setLocalListener(evts -> evts.forEach(event -> evtLatch.countDown()))
             .setRemoteFilterFactory(() -> evt -> true)
-            .setRemoteTransformerFactory(() -> evt -> true)
-            .setPageSize(entryCnt / 2);
+            .setRemoteTransformerFactory(() -> Cache.Entry::getValue)
+            .setPageSize(pageSize);
 
         long startTime = U.currentTimeMillis();
 
@@ -356,7 +360,7 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
         }
 
         HashSet<UUID> ids = new HashSet<>();
-        HashMap<UUID, Integer> evts = new HashMap<>();
+        HashMap<UUID, EnumMap<OperationType, Integer>> evts = new HashMap<>();
 
         stopCollectStatisticsAndRead(new TestHandler() {
             @Override public void continuousQuery(UUID nodeId, UUID routineId, int cacheId, long qryStartTime,
@@ -371,15 +375,35 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
                 assertEquals(qry.getRemoteTransformerFactory().getClass().getName(), rmtTransCls);
             }
 
-            @Override public void continuousQueryEvent(UUID nodeId, UUID routineId, int evtCnt) {
-                evts.compute(routineId, (uuid, cnt) -> cnt == null ? evtCnt : cnt + evtCnt);
+            @Override public void continuousQueryEntry(UUID nodeId, OperationType type, UUID routineId,
+                long opStartTime, long duration, int entCnt) {
+                evts.computeIfAbsent(routineId, uuid -> new EnumMap<>(OperationType.class))
+                    .compute(type, (t, cnt) -> cnt == null ? 1 : ++cnt);
 
-                assertEquals(node.context().localNodeId(), nodeId);
+                assertTrue(opStartTime >= startTime);
+                assertTrue(duration >= 0);
+
+                if (type == CQ_ENTRY_PROCESSED) {
+                    assertEquals(pageSize, entCnt);
+                    assertEquals(node.context().localNodeId(), nodeId);
+                }
+                else {
+                    assertEquals(1, entCnt);
+                    assertEquals(srv.context().localNodeId(), nodeId);
+                }
             }
         });
 
         assertEquals(qryCnt, evts.keySet().size());
-        assertTrue(evts.values().stream().allMatch(cnt -> cnt == entryCnt));
+
+        assertTrue(evts.values().stream().allMatch(map -> map.keySet().containsAll(CQ_ENTRY_OPS)));
+
+        evts.values().forEach(map -> map.forEach((type, cnt) -> {
+            if (type == CQ_ENTRY_PROCESSED)
+                assertEquals(entryCnt / pageSize, cnt.intValue());
+            else
+                assertEquals(entryCnt, cnt.intValue());
+        }));
 
         assertEquals(qryCnt, ids.size());
 

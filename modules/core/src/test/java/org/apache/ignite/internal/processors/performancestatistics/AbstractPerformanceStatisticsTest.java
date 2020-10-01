@@ -181,7 +181,8 @@ public abstract class AbstractPerformanceStatisticsTest extends GridCommonAbstra
         }
 
         /** {@inheritDoc} */
-        @Override public void continuousQueryEvent(UUID nodeId, UUID routineId, int evtCnt) {
+        @Override public void continuousQueryEntry(UUID nodeId, OperationType type, UUID routineId, long startTime,
+            long duration, int entCnt) {
             // No-op.
         }
     }

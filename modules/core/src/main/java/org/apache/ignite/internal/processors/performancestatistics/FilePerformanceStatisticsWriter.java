@@ -58,7 +58,7 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.TX_COMMIT;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.TX_ROLLBACK;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.cacheRecordSize;
-import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEntryRecordSize;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryOperationRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.jobRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.queryReadsRecordSize;
@@ -325,10 +325,11 @@ public class FilePerformanceStatisticsWriter {
      * @param routineId Routine id.
      * @param startTime Start time in milliseconds.
      * @param duration Duration in nanoseconds.
-     * @param entCnt Entry count.
+     * @param entCnt Entries count.
      */
-    public void continuousQueryEvent(OperationType type, UUID routineId, long startTime, long duration, int entCnt) {
-        doWrite(type, continuousQueryEntryRecordSize(), buf -> {
+    public void continuousQueryOperation(OperationType type, UUID routineId, long startTime, long duration,
+        int entCnt) {
+        doWrite(type, continuousQueryOperationRecordSize(), buf -> {
             writeUuid(buf, routineId);
             buf.putLong(startTime);
             buf.putLong(duration);

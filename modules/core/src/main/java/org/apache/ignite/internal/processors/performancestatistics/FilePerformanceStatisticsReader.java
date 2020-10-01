@@ -56,7 +56,7 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.cacheOperation;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.cacheRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEntryOperation;
-import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryEntryRecordSize;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryOperationRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.continuousQueryRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.jobRecordSize;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.queryReadsRecordSize;
@@ -435,7 +435,7 @@ public class FilePerformanceStatisticsReader {
             return true;
         }
         else if (continuousQueryEntryOperation(opType)) {
-            if (buf.remaining() < continuousQueryEntryRecordSize())
+            if (buf.remaining() < continuousQueryOperationRecordSize())
                 return false;
 
             UUID routineId = readUuid(buf);
@@ -444,7 +444,7 @@ public class FilePerformanceStatisticsReader {
             int entCnt = buf.getInt();
 
             for (PerformanceStatisticsHandler handler : curHnd)
-                handler.continuousQueryEntry(nodeId, opType, routineId, startTime, duration, entCnt);
+                handler.continuousQueryOperation(nodeId, opType, routineId, startTime, duration, entCnt);
 
             return true;
         }

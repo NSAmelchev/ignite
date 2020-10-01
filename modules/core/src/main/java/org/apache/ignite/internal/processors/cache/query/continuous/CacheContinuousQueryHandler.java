@@ -1046,7 +1046,7 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         }
 
         if (performanceStatsEnabled && notify && filter != null) {
-            ctx.performanceStatistics().continuousQueryEntry(CQ_ENTRY_FILTERED, routineId, startTime,
+            ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_FILTERED, routineId, startTime,
                 System.nanoTime() - startTimeNanos, 1);
         }
 
@@ -1213,7 +1213,7 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         }
 
         if (performanceStatsEnabled) {
-            ctx.performanceStatistics().continuousQueryEntry(CQ_ENTRY_PROCESSED, routineId, startTime, duration,
+            ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_PROCESSED, routineId, startTime, duration,
                 evts.size());
         }
     }
@@ -1682,7 +1682,7 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         }
 
         if (performanceStatsEnabled) {
-            ctx.performanceStatistics().continuousQueryEntry(CQ_ENTRY_TRANSFORMED, routineId, startTime,
+            ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_TRANSFORMED, routineId, startTime,
                 System.nanoTime() - startTimeNanos, 1);
         }
 

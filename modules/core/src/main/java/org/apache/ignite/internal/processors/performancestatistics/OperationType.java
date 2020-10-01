@@ -98,8 +98,8 @@ public enum OperationType {
     /** Transaction operations. */
     public static final EnumSet<OperationType> TX_OPS = EnumSet.of(TX_COMMIT, TX_ROLLBACK);
 
-    /** Cache continuous query entry operations. */
-    public static final EnumSet<OperationType> CQ_ENTRY_OPS = EnumSet.of(CQ_ENTRY_FILTERED, CQ_ENTRY_TRANSFORMED,
+    /** Cache continuous query operations. */
+    public static final EnumSet<OperationType> CQ_OPS = EnumSet.of(CQ_ENTRY_FILTERED, CQ_ENTRY_TRANSFORMED,
         CQ_ENTRY_PROCESSED);
 
     /** Value by identifier. */
@@ -148,7 +148,7 @@ public enum OperationType {
 
     /** @return {@code True} if cache continuous query entry operation. */
     public static boolean continuousQueryEntryOperation(OperationType op) {
-        return CQ_ENTRY_OPS.contains(op);
+        return CQ_OPS.contains(op);
     }
 
     /** @return Cache record size. */
@@ -197,8 +197,8 @@ public enum OperationType {
         return 1 + (cached ? 4 + 4 + 4 : 4 + lsnrLen + 4 + rmtFilterLen + 4 + rmtTransLen) + 16 + 4 + 8;
     }
 
-    /** @return Cache continuous query entry record size. */
-    public static int continuousQueryEntryRecordSize() {
+    /** @return Cache continuous query operation record size. */
+    public static int continuousQueryOperationRecordSize() {
         return 16 + 8 + 8 + 4;
     }
 }

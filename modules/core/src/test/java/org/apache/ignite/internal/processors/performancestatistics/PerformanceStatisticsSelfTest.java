@@ -65,8 +65,8 @@ import static org.apache.ignite.internal.processors.performancestatistics.Operat
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_REMOVE;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CACHE_REMOVE_ALL;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_FILTERED;
-import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_OPS;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_PROCESSED;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_OPS;
 
 /**
  * Tests performance statistics.
@@ -406,7 +406,7 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
                 }
             }
 
-            @Override public void continuousQueryEntry(UUID nodeId, OperationType type, UUID routineId,
+            @Override public void continuousQueryOperation(UUID nodeId, OperationType type, UUID routineId,
                 long opStartTime, long duration, int entCnt) {
                 evts.computeIfAbsent(routineId, uuid -> new EnumMap<>(OperationType.class))
                     .compute(type, (t, cnt) -> cnt == null ? 1 : ++cnt);
@@ -428,7 +428,7 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
         assertEquals(qryCnt, evts.keySet().size());
 
         if (qry instanceof ContinuousQueryWithTransformer)
-            assertTrue(evts.values().stream().allMatch(map -> map.keySet().containsAll(CQ_ENTRY_OPS)));
+            assertTrue(evts.values().stream().allMatch(map -> map.keySet().containsAll(CQ_OPS)));
         else {
             assertTrue(evts.values().stream().allMatch(
                 map -> map.keySet().containsAll(F.asList(CQ_ENTRY_FILTERED, CQ_ENTRY_PROCESSED))));

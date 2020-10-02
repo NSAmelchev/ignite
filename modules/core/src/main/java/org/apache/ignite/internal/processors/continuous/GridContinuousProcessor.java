@@ -881,7 +881,8 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
         locInfos.put(routineId,
             new LocalRoutineInfo(ctx.localNodeId(), prjPred, hnd, bufSize, interval, autoUnsubscribe));
 
-        writeStatistics(routineId, hnd);
+        if (ctx.performanceStatistics().enabled())
+            writeStatistics(routineId, hnd);
 
         if (locOnly) {
             try {
@@ -1316,7 +1317,8 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
 
         CacheContinuousQueryHandler<?, ?> hnd = (CacheContinuousQueryHandler<?, ?>)queryHnd;
 
-        String lsnr = hnd.localTransformedEventListener() != null ? hnd.localTransformedEventListener().getClass().getName() :
+        String lsnr = hnd.localTransformedEventListener() != null ?
+            hnd.localTransformedEventListener().getClass().getName() :
             hnd.localListener() != null ? hnd.localListener().getClass().getName() : "";
 
         String rmtFilter = hnd.getRemoteFilterFactory() != null ? hnd.getRemoteFilterFactory().getClass().getName() :

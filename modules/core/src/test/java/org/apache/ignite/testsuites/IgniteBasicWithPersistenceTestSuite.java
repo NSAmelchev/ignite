@@ -39,6 +39,7 @@ import org.apache.ignite.internal.processors.cache.persistence.SingleNodePersist
 import org.apache.ignite.internal.processors.cache.persistence.snapshot.IgniteClusterSnapshotSelfTest;
 import org.apache.ignite.internal.processors.cache.persistence.snapshot.IgniteSnapshotMXBeanTest;
 import org.apache.ignite.internal.processors.cache.persistence.snapshot.IgniteSnapshotManagerSelfTest;
+import org.apache.ignite.internal.processors.performancestatistics.ContinuousQueryTest;
 import org.apache.ignite.internal.processors.performancestatistics.ForwardReadTest;
 import org.apache.ignite.internal.processors.performancestatistics.PerformanceStatisticsMultipleStartTest;
 import org.apache.ignite.internal.processors.performancestatistics.PerformanceStatisticsPropertiesTest;
@@ -95,7 +96,8 @@ import org.junit.runners.Suite;
     StringCacheTest.class,
     PerformanceStatisticsPropertiesTest.class,
     PerformanceStatisticsMultipleStartTest.class,
-    ForwardReadTest.class
+    ForwardReadTest.class,
+    ContinuousQueryTest.class
 })
 public class IgniteBasicWithPersistenceTestSuite {
 }

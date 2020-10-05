@@ -31,7 +31,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicLong;
 import javax.cache.configuration.Factory;
 import javax.cache.event.CacheEntryEvent;
 import javax.cache.event.CacheEntryEventFilter;
@@ -64,6 +63,7 @@ import org.apache.ignite.internal.processors.cache.distributed.dht.topology.Grid
 import org.apache.ignite.internal.processors.cache.query.CacheQueryType;
 import org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryManager.JCacheQueryLocalListener;
 import org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryManager.JCacheQueryRemoteFilter;
+import org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryStatisticsHelper.StatisticsHolder;
 import org.apache.ignite.internal.processors.continuous.GridContinuousBatch;
 import org.apache.ignite.internal.processors.continuous.GridContinuousHandler;
 import org.apache.ignite.internal.processors.continuous.GridContinuousQueryBatch;
@@ -87,6 +87,8 @@ import static org.apache.ignite.events.EventType.EVT_CACHE_QUERY_EXECUTED;
 import static org.apache.ignite.events.EventType.EVT_CACHE_QUERY_OBJECT_READ;
 import static org.apache.ignite.internal.processors.cache.distributed.dht.preloader.CachePartitionPartialCountersMap.toCountersMap;
 import static org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryEntry.createFilteredEntry;
+import static org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryStatisticsHelper.finishGatheringStatistics;
+import static org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryStatisticsHelper.startGatheringStatistics;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_FILTERED;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_PROCESSED;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_TRANSFORMED;
@@ -1030,8 +1032,8 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
         boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();
 
-        long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
-        long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
+        if (performanceStatsEnabled)
+            startGatheringStatistics();
 
         CacheEntryEventFilter filter = null;
 
@@ -1044,10 +1046,15 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         catch (Exception e) {
             U.error(log, "CacheEntryEventFilter failed: " + e);
         }
+        finally {
+            if (performanceStatsEnabled) {
+                StatisticsHolder stat = finishGatheringStatistics();
 
-        if (performanceStatsEnabled && notify && filter != null) {
-            ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_FILTERED, routineId, startTime,
-                System.nanoTime() - startTimeNanos, 1);
+                if (notify && filter != null) {
+                    ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_FILTERED, routineId, stat.startTime(),
+                        stat.duration(), 1);
+                }
+            }
         }
 
         if (!notify)
@@ -1167,54 +1174,23 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
         boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();
 
-        long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
-        long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
-        long duration = 0;
+        if (performanceStatsEnabled)
+            startGatheringStatistics();
 
-        if (locLsnr != null) {
-            locLsnr.onUpdated(evts);
+        try {
+            if (locLsnr != null)
+                locLsnr.onUpdated(evts);
 
-            if (performanceStatsEnabled)
-                duration = System.nanoTime() - startTimeNanos;
+            if (locTransLsnr != null)
+                locTransLsnr.onUpdated(transform(trans, evts));
         }
-
-        if (locTransLsnr != null) {
-            Iterable transEvts = transform(trans, evts);
-
+        finally {
             if (performanceStatsEnabled) {
-                Iterator iter = transEvts.iterator();
+                StatisticsHolder stat = finishGatheringStatistics();
 
-                AtomicLong transformDur = new AtomicLong();
-
-                locTransLsnr.onUpdated(new Iterable() {
-                    @NotNull @Override public Iterator iterator() {
-                        return new Iterator() {
-                            @Override public boolean hasNext() {
-                                return iter.hasNext();
-                            }
-
-                            @Override public Object next() {
-                                long startTimeNanos = System.nanoTime();
-
-                                Object next = iter.next();
-
-                                transformDur.addAndGet(System.nanoTime() - startTimeNanos);
-
-                                return next;
-                            }
-                        };
-                    }
-                });
-
-                duration = System.nanoTime() - startTimeNanos - transformDur.get();
+                ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_PROCESSED, routineId, stat.startTime(),
+                    stat.duration(), evts.size());
             }
-            else
-                locTransLsnr.onUpdated(transEvts);
-        }
-
-        if (performanceStatsEnabled) {
-            ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_PROCESSED, routineId, startTime, duration,
-                evts.size());
         }
     }
 
@@ -1669,8 +1645,8 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
         boolean performanceStatsEnabled = ctx.performanceStatistics().enabled() && trans != returnValTrans;
 
-        long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
-        long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
+        if (performanceStatsEnabled)
+            startGatheringStatistics();
 
         Object transVal = null;
 
@@ -1680,10 +1656,13 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         catch (Exception e) {
             U.error(log, e);
         }
+        finally {
+            if (performanceStatsEnabled) {
+                StatisticsHolder stat = finishGatheringStatistics();
 
-        if (performanceStatsEnabled) {
-            ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_TRANSFORMED, routineId, startTime,
-                System.nanoTime() - startTimeNanos, 1);
+                ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_TRANSFORMED, routineId, stat.startTime(),
+                    stat.duration(), 1);
+            }
         }
 
         return transVal;

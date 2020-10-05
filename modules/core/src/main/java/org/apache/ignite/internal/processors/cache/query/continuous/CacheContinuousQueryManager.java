@@ -90,6 +90,9 @@ import static org.apache.ignite.events.EventType.EVT_CACHE_QUERY_OBJECT_READ;
 import static org.apache.ignite.internal.GridTopic.TOPIC_CACHE;
 import static org.apache.ignite.internal.IgniteFeatures.CONT_QRY_SECURITY_AWARE;
 import static org.apache.ignite.internal.IgniteFeatures.allNodesSupports;
+import static org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryStatisticsHelper.StatisticsHolder;
+import static org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryStatisticsHelper.finishGatheringStatistics;
+import static org.apache.ignite.internal.processors.cache.query.continuous.CacheContinuousQueryStatisticsHelper.startGatheringStatistics;
 import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_PROCESSED;
 
 /**
@@ -793,79 +796,78 @@ public class CacheContinuousQueryManager<K, V> extends GridCacheManagerAdapter<K
 
             boolean performanceStatsEnabled = cctx.kernalContext().performanceStatistics().enabled();
 
-            long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
-            long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
+            if (performanceStatsEnabled)
+                startGatheringStatistics();
 
-            AtomicLong filterDur = new AtomicLong();
+            try {
+                locLsnr.onUpdated(new Iterable<CacheEntryEvent>() {
+                    @Override public Iterator<CacheEntryEvent> iterator() {
+                        return new Iterator<CacheEntryEvent>() {
+                            private CacheContinuousQueryEvent next;
 
-            locLsnr.onUpdated(new Iterable<CacheEntryEvent>() {
-                @Override public Iterator<CacheEntryEvent> iterator() {
-                    return new Iterator<CacheEntryEvent>() {
-                        private CacheContinuousQueryEvent next;
-
-                        {
-                            advance();
-                        }
-
-                        @Override public boolean hasNext() {
-                            return next != null;
-                        }
-
-                        @Override public CacheEntryEvent next() {
-                            if (!hasNext())
-                                throw new NoSuchElementException();
-
-                            CacheEntryEvent next0 = next;
-
-                            advance();
-
-                            return next0;
-                        }
-
-                        @Override public void remove() {
-                            throw new UnsupportedOperationException();
-                        }
-
-                        private void advance() {
-                            next = null;
-
-                            while (next == null) {
-                                if (!it.hasNext())
-                                    break;
-
-                                CacheDataRow e = it.next();
-
-                                CacheContinuousQueryEntry entry = new CacheContinuousQueryEntry(
-                                    cctx.cacheId(),
-                                    CREATED,
-                                    e.key(),
-                                    e.value(),
-                                    null,
-                                    keepBinary,
-                                    0,
-                                    -1,
-                                    null,
-                                    (byte)0);
-
-                                next = new CacheContinuousQueryEvent<>(
-                                    cctx.kernalContext().cache().jcache(cctx.name()),
-                                    cctx, entry);
-
-                                long startTimeNanos = System.nanoTime();
-
-                                if (!hnd.filter(next))
-                                    next = null;
-
-                                filterDur.addAndGet(System.nanoTime() - startTimeNanos);
+                            {
+                                advance();
                             }
-                        }
-                    };
-                }
-            });
 
-            if (performanceStatsEnabled) {
-                cctx.kernalContext().performanceStatistics().continuousQueryOperation(CQ_ENTRY_PROCESSED, id, startTime,
-                    System.nanoTime() - startTimeNanos - filterDur.get(), 1);
+                            @Override public boolean hasNext() {
+                                return next != null;
+                            }
+
+                            @Override public CacheEntryEvent next() {
+                                if (!hasNext())
+                                    throw new NoSuchElementException();
+
+                                CacheEntryEvent next0 = next;
+
+                                advance();
+
+                                return next0;
+                            }
+
+                            @Override public void remove() {
+                                throw new UnsupportedOperationException();
+                            }
+
+                            private void advance() {
+                                next = null;
+
+                                while (next == null) {
+                                    if (!it.hasNext())
+                                        break;
+
+                                    CacheDataRow e = it.next();
+
+                                    CacheContinuousQueryEntry entry = new CacheContinuousQueryEntry(
+                                        cctx.cacheId(),
+                                        CREATED,
+                                        e.key(),
+                                        e.value(),
+                                        null,
+                                        keepBinary,
+                                        0,
+                                        -1,
+                                        null,
+                                        (byte)0);
+
+                                    next = new CacheContinuousQueryEvent<>(
+                                        cctx.kernalContext().cache().jcache(cctx.name()),
+                                        cctx, entry);
+
+                                    if (!hnd.filter(next))
+                                        next = null;
+                                }
+                            }
+                        };
+                    }
+                });
+            }
+            finally {
+                if (performanceStatsEnabled) {
+                    StatisticsHolder stat = finishGatheringStatistics();
+
+                    cctx.kernalContext().performanceStatistics().continuousQueryOperation(CQ_ENTRY_PROCESSED, id,
+                        stat.startTime(), stat.duration(), 1);
+                }
             }
         }
 

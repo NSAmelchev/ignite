@@ -1030,19 +1030,15 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
         boolean notify = !entry.isFiltered();
 
-        CacheEntryEventFilter filter = null;
-
         try {
-            filter = getEventFilter();
-
-            if (notify && filter != null) {
+            if (notify && getEventFilter() != null) {
                 boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();
 
                 if (performanceStatsEnabled)
                     startGatheringStatistics();
 
                 try {
-                    notify = filter.evaluate(evt);
+                    notify = getEventFilter().evaluate(evt);
                 }
                 finally {
                     if (performanceStatsEnabled) {

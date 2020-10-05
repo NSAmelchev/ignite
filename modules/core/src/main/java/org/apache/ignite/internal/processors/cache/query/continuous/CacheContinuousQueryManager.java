@@ -796,6 +796,8 @@ public class CacheContinuousQueryManager<K, V> extends GridCacheManagerAdapter<K
 
             boolean performanceStatsEnabled = cctx.kernalContext().performanceStatistics().enabled();
 
+            AtomicInteger cnt = performanceStatsEnabled ? new AtomicInteger() : null;
+
             if (performanceStatsEnabled)
                 startGatheringStatistics();
 
@@ -855,6 +857,9 @@ public class CacheContinuousQueryManager<K, V> extends GridCacheManagerAdapter<K
 
                                     if (!hnd.filter(next))
                                         next = null;
+
+                                    if (performanceStatsEnabled)
+                                        cnt.incrementAndGet();
                                 }
                             }
                         };
@@ -866,7 +871,7 @@ public class CacheContinuousQueryManager<K, V> extends GridCacheManagerAdapter<K
                     StatisticsHolder stat = finishGatheringStatistics();
 
                     cctx.kernalContext().performanceStatistics().continuousQueryOperation(CQ_ENTRY_PROCESSED, id,
-                        stat.startTime(), stat.duration(), 1);
+                        stat.startTime(), stat.duration(), cnt.get());
                 }
             }
         }

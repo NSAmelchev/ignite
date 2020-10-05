@@ -1030,31 +1030,32 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
         boolean notify = !entry.isFiltered();
 
-        boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();
-
-        if (performanceStatsEnabled)
-            startGatheringStatistics();
-
         CacheEntryEventFilter filter = null;
 
         try {
             filter = getEventFilter();
 
-            if (notify && filter != null)
-                notify = filter.evaluate(evt);
+            if (notify && filter != null) {
+                boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();
+
+                if (performanceStatsEnabled)
+                    startGatheringStatistics();
+
+                try {
+                    notify = filter.evaluate(evt);
+                }
+                finally {
+                    if (performanceStatsEnabled) {
+                        StatisticsHolder stat = finishGatheringStatistics();
+
+                        ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_FILTERED, routineId,
+                            stat.startTime(), stat.duration(), 1);
+                    }
+                }
+            }
         }
         catch (Exception e) {
             U.error(log, "CacheEntryEventFilter failed: " + e);
-        }
-        finally {
-            if (performanceStatsEnabled) {
-                StatisticsHolder stat = finishGatheringStatistics();
-
-                if (notify && filter != null) {
-                    ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_FILTERED, routineId, stat.startTime(),
-                        stat.duration(), 1);
-                }
-            }
         }
 
         if (!notify)

@@ -364,7 +364,7 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
         if (qry instanceof ContinuousQuery)
             ((ContinuousQuery)qry).setLocalListener(evts -> evts.forEach(event -> evtLatch.countDown()));
         else
-            ((ContinuousQueryWithTransformer)qry).setLocalListener(evts -> evts.forEach(event -> evtLatch.countDown()));
+            ((ContinuousQueryWithTransformer)qry).setLocalListener(evts -> evts.forEach(e -> evtLatch.countDown()));
 
         qry.setRemoteFilterFactory(() -> evt -> true);
 

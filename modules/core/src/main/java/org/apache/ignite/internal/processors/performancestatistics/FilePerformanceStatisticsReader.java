@@ -395,14 +395,16 @@ public class FilePerformanceStatisticsReader {
 
                 int lsnrLen = buf.getInt();
 
-                if (buf.remaining() < continuousQueryRecordSize(lsnrLen, 0, 0, false) - 1 - 4)
+                if (buf.remaining() < continuousQueryRecordSize(lsnrLen, 0, 0, false) -
+                    1 - 4 - lsnrLen)
                     return false;
 
                 lsnr = readString(buf, lsnrLen);
 
                 int rmtFilterLen = buf.getInt();
 
-                if (buf.remaining() < continuousQueryRecordSize(rmtFilterLen, rmtFilterLen, 0, false) - 1 - 4 - 4)
+                if (buf.remaining() < continuousQueryRecordSize(rmtFilterLen, rmtFilterLen, 0, false) -
+                    1 - 4 - lsnrLen - 4 - rmtFilterLen)
                     return false;
 
                 rmtFilter = readString(buf, rmtFilterLen);
@@ -410,7 +412,7 @@ public class FilePerformanceStatisticsReader {
                 int rmtTransLen = buf.getInt();
 
                 if (buf.remaining() < continuousQueryRecordSize(rmtTransLen, rmtFilterLen, rmtTransLen, false) -
-                    1 - 4 - 4 - 4)
+                    1 - 4 - lsnrLen - 4 - rmtFilterLen - 4 - rmtTransLen)
                     return false;
 
                 rmtTrans = readString(buf, rmtTransLen);

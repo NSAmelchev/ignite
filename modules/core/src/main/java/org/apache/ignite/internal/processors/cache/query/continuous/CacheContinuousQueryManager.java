@@ -90,6 +90,7 @@ import static org.apache.ignite.events.EventType.EVT_CACHE_QUERY_OBJECT_READ;
 import static org.apache.ignite.internal.GridTopic.TOPIC_CACHE;
 import static org.apache.ignite.internal.IgniteFeatures.CONT_QRY_SECURITY_AWARE;
 import static org.apache.ignite.internal.IgniteFeatures.allNodesSupports;
+import static org.apache.ignite.internal.processors.performancestatistics.OperationType.CQ_ENTRY_PROCESSED;
 
 /**
  * Continuous queries manager.
@@ -790,6 +791,13 @@ public class CacheContinuousQueryManager<K, V> extends GridCacheManagerAdapter<K
                 null,
                 null);
 
+            boolean performanceStatsEnabled = cctx.kernalContext().performanceStatistics().enabled();
+
+            long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
+            long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
+
+            AtomicLong filterDur = new AtomicLong();
+
             locLsnr.onUpdated(new Iterable<CacheEntryEvent>() {
                 @Override public Iterator<CacheEntryEvent> iterator() {
                     return new Iterator<CacheEntryEvent>() {
@@ -843,13 +851,22 @@ public class CacheContinuousQueryManager<K, V> extends GridCacheManagerAdapter<K
                                     cctx.kernalContext().cache().jcache(cctx.name()),
                                     cctx, entry);
 
+                                long startTimeNanos = System.nanoTime();
+
                                 if (!hnd.filter(next))
                                     next = null;
+
+                                filterDur.addAndGet(System.nanoTime() - startTimeNanos);
                             }
                         }
                     };
                 }
             });
+
+            if (performanceStatsEnabled) {
+                cctx.kernalContext().performanceStatistics().continuousQueryOperation(CQ_ENTRY_PROCESSED, id, startTime,
+                    System.nanoTime() - startTimeNanos - filterDur.get(), 1);
+            }
         }
 
         return id;

@@ -795,6 +795,7 @@ public class CacheContinuousQueryManager<K, V> extends GridCacheManagerAdapter<K
 
             long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
             long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
+            AtomicInteger cnt = performanceStatsEnabled ? new AtomicInteger() : null;
 
             AtomicLong filterDur = new AtomicLong();
 
@@ -851,6 +852,8 @@ public class CacheContinuousQueryManager<K, V> extends GridCacheManagerAdapter<K
                                     cctx.kernalContext().cache().jcache(cctx.name()),
                                     cctx, entry);
 
+                                cnt.incrementAndGet();
+
                                 long startTimeNanos = System.nanoTime();
 
                                 if (!hnd.filter(next))
@@ -865,7 +868,7 @@ public class CacheContinuousQueryManager<K, V> extends GridCacheManagerAdapter<K
 
             if (performanceStatsEnabled) {
                 cctx.kernalContext().performanceStatistics().continuousQueryOperation(CQ_ENTRY_PROCESSED, id, startTime,
-                    System.nanoTime() - startTimeNanos - filterDur.get(), 1);
+                    System.nanoTime() - startTimeNanos - filterDur.get(), cnt.get());
             }
         }
 

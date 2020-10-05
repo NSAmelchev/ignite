@@ -340,7 +340,7 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
     public void testContinuousQuery() throws Exception {
         ContinuousQuery<Object, Object> qry = new ContinuousQuery<>();
 
-        checkContinousQuery(qry);
+        checkContinuousQuery(qry);
     }
 
     /** @throws Exception If failed. */
@@ -350,11 +350,11 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
 
         qry.setRemoteTransformerFactory(() -> Cache.Entry::getValue);
 
-        checkContinousQuery(qry);
+        checkContinuousQuery(qry);
     }
 
     /** @throws Exception If failed. */
-    private void checkContinousQuery(AbstractContinuousQuery<Object, Object> qry) throws Exception {
+    private void checkContinuousQuery(AbstractContinuousQuery<Object, Object> qry) throws Exception {
         int qryCnt = 2;
         int entryCnt = 10;
         int pageSize = entryCnt / 2;

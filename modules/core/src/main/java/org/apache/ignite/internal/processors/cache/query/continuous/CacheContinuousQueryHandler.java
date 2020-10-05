@@ -1028,26 +1028,30 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
         boolean notify = !entry.isFiltered();
 
-        boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();
-
-        long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
-        long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
-
         CacheEntryEventFilter filter = null;
 
         try {
             filter = getEventFilter();
 
-            if (notify && filter != null)
-                notify = filter.evaluate(evt);
+            if (notify && filter != null) {
+                boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();
+
+                long startTime = performanceStatsEnabled ? U.currentTimeMillis() : 0;
+                long startTimeNanos = performanceStatsEnabled ? System.nanoTime() : 0;
+
+                try {
+                    notify = filter.evaluate(evt);
+                }
+                finally {
+                    if (performanceStatsEnabled && notify && filter != null) {
+                        ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_FILTERED, routineId, startTime,
+                            System.nanoTime() - startTimeNanos, 1);
+                    }
+                }
+            }
         }
         catch (Exception e) {
             U.error(log, "CacheEntryEventFilter failed: " + e);
-        }
-
-        if (performanceStatsEnabled && notify && filter != null) {
-            ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_FILTERED, routineId, startTime,
-                System.nanoTime() - startTimeNanos, 1);
         }
 
         if (!notify)
@@ -1680,10 +1684,11 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
         catch (Exception e) {
             U.error(log, e);
         }
-
-        if (performanceStatsEnabled) {
-            ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_TRANSFORMED, routineId, startTime,
-                System.nanoTime() - startTimeNanos, 1);
+        finally {
+            if (performanceStatsEnabled) {
+                ctx.performanceStatistics().continuousQueryOperation(CQ_ENTRY_TRANSFORMED, routineId, startTime,
+                    System.nanoTime() - startTimeNanos, 1);
+            }
         }
 
         return transVal;

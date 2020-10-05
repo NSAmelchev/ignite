@@ -337,7 +337,7 @@ public class PerformanceStatisticsSelfTest extends AbstractPerformanceStatistics
 
     /** @throws Exception If failed. */
     @Test
-    public void testContinousQuery() throws Exception {
+    public void testContinuousQuery() throws Exception {
         ContinuousQuery<Object, Object> qry = new ContinuousQuery<>();
 
         checkContinuousQuery(qry);

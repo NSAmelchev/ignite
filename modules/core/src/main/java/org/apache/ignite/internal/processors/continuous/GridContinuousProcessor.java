@@ -1328,7 +1328,7 @@ public class GridContinuousProcessor extends GridProcessorAdapter {
             hnd.getRemoteTransformerFactory().getClass().getName() : "";
 
         ctx.performanceStatistics().continuousQuery(routineId, CU.cacheId(hnd.cacheName()),
-            U.currentTimeMillis(), lsnr, rmtFilter, rmtTrans);
+            hnd.startTime(), lsnr, rmtFilter, rmtTrans);
     }
 
     /**

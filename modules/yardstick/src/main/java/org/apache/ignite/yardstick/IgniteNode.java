@@ -39,6 +39,7 @@ import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.configuration.NearCacheConfiguration;
 import org.apache.ignite.configuration.TransactionConfiguration;
 import org.apache.ignite.configuration.WALMode;
+import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.lang.IgniteBiTuple;
@@ -213,6 +214,9 @@ public class IgniteNode implements BenchmarkServer {
             replaceAdrList(c, cfg);
 
         ignite = IgniteSpring.start(c, appCtx);
+
+        if (args.performanceStatisticsEnabled())
+            ((IgniteEx)ignite).context().performanceStatistics().startCollectStatistics();
 
         BenchmarkUtils.println("Configured marshaller: " + ignite.cluster().localNode().attribute(ATTR_MARSHALLER));
     }

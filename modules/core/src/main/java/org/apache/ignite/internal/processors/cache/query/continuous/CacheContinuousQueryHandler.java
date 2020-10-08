@@ -233,6 +233,9 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
     /** */
     private transient IgniteLogger log;
 
+    /** Query start time. */
+    private final long startTime = U.currentTimeMillis();
+
     /**
      * Required by {@link Externalizable}.
      */
@@ -1347,6 +1350,11 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
      */
     public boolean isMarshalled() {
         return rmtFilter == null || U.isGrid(rmtFilter.getClass()) || rmtFilterDep != null;
+    }
+
+    /** @return Query start time. */
+    public long startTime() {
+        return startTime;
     }
 
     /**

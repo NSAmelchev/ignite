@@ -1169,7 +1169,7 @@ public class CacheContinuousQueryHandler<K, V> implements GridContinuousHandler 
 
         assert locLsnr == null || locTransLsnr == null;
 
-        if (F.isEmpty(evts))
+        if (F.isEmpty(evts) || (locLsnr == null && locTransLsnr == null))
             return;
 
         boolean performanceStatsEnabled = ctx.performanceStatistics().enabled();

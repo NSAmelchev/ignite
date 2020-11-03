@@ -881,7 +881,7 @@ public class GridNioServerWrapper {
 
                 List<GridNioFilter> filters = new ArrayList<>();
 
-                if (tracing instanceof GridTracingManager && ((GridManager)tracing).enabled())
+                if (tracing instanceof GridTracingManager && ((GridManager)tracing).enabled() && false)
                     filters.add(new GridNioTracerFilter(log, tracing));
 
                 filters.add(new GridNioCodecFilter(parser, log, true));

@@ -110,6 +110,8 @@ import org.apache.ignite.internal.processors.datastreamer.DataStreamerImpl;
 import org.apache.ignite.internal.processors.dr.IgniteDrDataStreamerCacheUpdater;
 import org.apache.ignite.internal.processors.platform.cache.PlatformCacheEntryFilter;
 import org.apache.ignite.internal.processors.task.GridInternal;
+import org.apache.ignite.internal.processors.tracing.MTC;
+import org.apache.ignite.internal.processors.tracing.Span;
 import org.apache.ignite.internal.transactions.IgniteTxHeuristicCheckedException;
 import org.apache.ignite.internal.transactions.IgniteTxRollbackCheckedException;
 import org.apache.ignite.internal.transactions.IgniteTxTimeoutCheckedException;
@@ -169,6 +171,8 @@ import static org.apache.ignite.internal.processors.dr.GridDrType.DR_NONE;
 import static org.apache.ignite.internal.processors.metric.impl.MetricUtils.cacheMetricsRegistryName;
 import static org.apache.ignite.internal.processors.task.GridTaskThreadContextKey.TC_NO_FAILOVER;
 import static org.apache.ignite.internal.processors.task.GridTaskThreadContextKey.TC_SUBGRID;
+import static org.apache.ignite.internal.processors.tracing.SpanType.CACHE_GET;
+import static org.apache.ignite.internal.processors.tracing.SpanType.CACHE_PUT;
 import static org.apache.ignite.transactions.TransactionConcurrency.OPTIMISTIC;
 import static org.apache.ignite.transactions.TransactionConcurrency.PESSIMISTIC;
 import static org.apache.ignite.transactions.TransactionIsolation.READ_COMMITTED;
@@ -1467,27 +1471,33 @@ public abstract class GridCacheAdapter<K, V> implements IgniteInternalCache<K, V
     @Nullable @Override public V get(K key) throws IgniteCheckedException {
         A.notNull(key, "key");
 
-        boolean statsEnabled = ctx.statisticsEnabled();
+        Span span = ctx.kernalContext().tracing().create(CACHE_GET, MTC.span());
 
-        long start = statsEnabled ? System.nanoTime() : 0L;
+        try (MTC.TraceSurroundings ignored = MTC.support(span)) {
+            span.addTag("cacheId", () -> String.valueOf(ctx.cacheId()));
 
-        boolean keepBinary = ctx.keepBinary();
+            boolean statsEnabled = ctx.statisticsEnabled();
 
-        if (keepBinary)
-            key = (K)ctx.toCacheKeyObject(key);
+            long start = statsEnabled ? System.nanoTime() : 0L;
 
-        V val = repairableGet(key, !keepBinary, false);
+            boolean keepBinary = ctx.keepBinary();
 
-        if (ctx.config().getInterceptor() != null) {
-            key = keepBinary ? (K)ctx.unwrapBinaryIfNeeded(key, true, false) : key;
+            if (keepBinary)
+                key = (K)ctx.toCacheKeyObject(key);
 
-            val = (V)ctx.config().getInterceptor().onGet(key, val);
+            V val = repairableGet(key, !keepBinary, false);
+
+            if (ctx.config().getInterceptor() != null) {
+                key = keepBinary ? (K)ctx.unwrapBinaryIfNeeded(key, true, false) : key;
+
+                val = (V)ctx.config().getInterceptor().onGet(key, val);
+            }
+
+            if (statsEnabled)
+                metrics0().addGetTimeNanos(System.nanoTime() - start);
+
+            return val;
         }
-
-        if (statsEnabled)
-            metrics0().addGetTimeNanos(System.nanoTime() - start);
-
-        return val;
     }
 
     /** {@inheritDoc} */
@@ -2565,21 +2575,27 @@ public abstract class GridCacheAdapter<K, V> implements IgniteInternalCache<K, V
      */
     public boolean put(final K key, final V val, final CacheEntryPredicate filter)
         throws IgniteCheckedException {
-        boolean statsEnabled = ctx.statisticsEnabled();
+        Span span = ctx.kernalContext().tracing().create(CACHE_PUT, MTC.span());
 
-        long start = statsEnabled ? System.nanoTime() : 0L;
+        try (MTC.TraceSurroundings ignored = MTC.support(span)) {
+            span.addTag("cacheId", () -> String.valueOf(ctx.cacheId()));
 
-        A.notNull(key, "key", val, "val");
+            boolean statsEnabled = ctx.statisticsEnabled();
 
-        if (keyCheck)
-            validateCacheKey(key);
+            long start = statsEnabled ? System.nanoTime() : 0L;
 
-        boolean stored = put0(key, val, filter);
+            A.notNull(key, "key", val, "val");
 
-        if (statsEnabled && stored)
-            metrics0().addPutTimeNanos(System.nanoTime() - start);
+            if (keyCheck)
+                validateCacheKey(key);
 
-        return stored;
+            boolean stored = put0(key, val, filter);
+
+            if (statsEnabled && stored)
+                metrics0().addPutTimeNanos(System.nanoTime() - start);
+
+            return stored;
+        }
     }
 
     /**

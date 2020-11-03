@@ -64,6 +64,13 @@ public interface TracingConfigurationManager {
             withIncludedScopes(Collections.emptySet()).
             build();
 
+    /** Default communication configuration. */
+    static final TracingConfigurationParameters DEFAULT_CACHE_API_CONFIGURATION =
+        new TracingConfigurationParameters.Builder().
+            withSamplingRate(0d).
+            withIncludedScopes(Collections.emptySet()).
+            build();
+
     /** Default noop configuration. */
     static final TracingConfigurationParameters NOOP_CONFIGURATION =
         new TracingConfigurationParameters.Builder().
@@ -129,6 +136,9 @@ public interface TracingConfigurationManager {
 
             case SQL:
                 return DEFAULT_SQL_CONFIGURATION;
+
+            case CACHE_API:
+                return DEFAULT_CACHE_API_CONFIGURATION;
 
             default: {
                 return NOOP_CONFIGURATION;

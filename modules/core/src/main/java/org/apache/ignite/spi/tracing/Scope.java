@@ -34,7 +34,10 @@ public enum Scope {
     TX((short)4),
 
     /** SQL query scope. */
-    SQL((short)5);
+    SQL((short)5),
+
+    /** */
+    CACHE_API((short)6);
 
     /** Scope index. */
     private final short idx;

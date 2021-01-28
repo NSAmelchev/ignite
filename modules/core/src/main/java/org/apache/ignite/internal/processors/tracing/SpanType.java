@@ -234,7 +234,13 @@ public enum SpanType {
     SQL_CACHE_UPDATE(Scope.SQL, "sql.cache.update", 69),
 
     /** Processing of incoming batch. */
-    SQL_BATCH_PROCESS(Scope.SQL, "sql.batch.process", 70);
+    SQL_BATCH_PROCESS(Scope.SQL, "sql.batch.process", 70),
+
+    /** */
+    CACHE_GET(Scope.CACHE_API, "cache.get", 71, true),
+
+    /** */
+    CACHE_PUT(Scope.CACHE_API, "cache.put", 72, true);
 
     /** Scope */
     private Scope scope;

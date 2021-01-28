@@ -356,6 +356,9 @@ public class TransactionProxyImpl<K, V> implements TransactionProxy, Externaliza
     @Override public void close() {
         Span span = MTC.span();
 
+        span.addTag("commited", () -> String.valueOf(!tx.isRollbackOnly()));
+        span.addTag("cacheIds", () -> tx.txState().cacheIds().toString());
+
         try (TraceSurroundings ignored =
                  MTC.support(cctx.kernalContext().tracing().create(TX_CLOSE, span))) {
             enter();

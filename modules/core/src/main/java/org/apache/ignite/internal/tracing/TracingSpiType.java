@@ -25,7 +25,10 @@ public enum TracingSpiType {
     NOOP_TRACING_SPI((byte)0),
 
     /** */
-    OPEN_CENSUS_TRACING_SPI((byte)1);
+    OPEN_CENSUS_TRACING_SPI((byte)1),
+
+    /** */
+    PERFORMANCE_STATISTICS_TRACING_SPI((byte)2);
 
     /** Byte index of a tracing spi instance. */
     private final byte idx;

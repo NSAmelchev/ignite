@@ -44,6 +44,7 @@ import java.util.Deque;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -72,6 +74,7 @@ import org.apache.ignite.IgniteException;
 import org.apache.ignite.IgniteInterruptedException;
 import org.apache.ignite.IgniteLogger;
 import org.apache.ignite.IgniteSnapshot;
+import org.apache.ignite.IgniteSystemProperties;
 import org.apache.ignite.binary.BinaryType;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.compute.ComputeTask;
@@ -104,6 +107,7 @@ import org.apache.ignite.internal.managers.encryption.GroupKey;
 import org.apache.ignite.internal.managers.encryption.GroupKeyEncrypted;
 import org.apache.ignite.internal.managers.eventstorage.DiscoveryEventListener;
 import org.apache.ignite.internal.managers.systemview.walker.SnapshotViewWalker;
+import org.apache.ignite.internal.pagemem.PageIdUtils;
 import org.apache.ignite.internal.pagemem.store.PageStore;
 import org.apache.ignite.internal.processors.affinity.AffinityTopologyVersion;
 import org.apache.ignite.internal.processors.cache.CacheGroupDescriptor;
@@ -146,6 +150,7 @@ import org.apache.ignite.internal.processors.task.GridInternal;
 import org.apache.ignite.internal.util.BasicRateLimiter;
 import org.apache.ignite.internal.util.GridBusyLock;
 import org.apache.ignite.internal.util.GridCloseableIteratorAdapter;
+import org.apache.ignite.internal.util.GridIntIterator;
 import org.apache.ignite.internal.util.distributed.DistributedProcess;
 import org.apache.ignite.internal.util.distributed.InitMessage;
 import org.apache.ignite.internal.util.future.GridCompoundFuture;
@@ -238,6 +243,9 @@ public class IgniteSnapshotManager extends GridCacheSharedManagerAdapter
     /** File with delta pages suffix. */
     public static final String DELTA_SUFFIX = ".delta";
 
+    /** File with delta pages index suffix. */
+    public static final String DELTA_IDX_SUFFIX = ".idx";
+
     /** File name template consists of delta pages. */
     public static final String PART_DELTA_TEMPLATE = PART_FILE_TEMPLATE + DELTA_SUFFIX;
 
@@ -276,6 +284,12 @@ public class IgniteSnapshotManager extends GridCacheSharedManagerAdapter
 
     /** Maximum block size for limited snapshot transfer (64KB by default). */
     public static final int SNAPSHOT_LIMITED_TRANSFER_BLOCK_SIZE_BYTES = 64 * 1024;
+
+    /** Default value of {@link IgniteSystemProperties#IGNITE_SNAPSHOT_SEQUENTIAL_WRITE}. */
+    public static final boolean DFLT_IGNITE_SNAPSHOT_SEQUENTIAL_WRITE = true;
+
+    /** Snapshot delta sort batch size in pages count. */
+    public static final int DELTA_SORT_BATCH_SIZE = 500_000;
 
     /** Metastorage key to save currently running snapshot directory path. */
     private static final String SNP_RUNNING_DIR_KEY = "snapshot-running-dir";
@@ -423,6 +437,16 @@ public class IgniteSnapshotManager extends GridCacheSharedManagerAdapter
      */
     public static File partDeltaFile(File snapshotCacheDir, int partId) {
         return new File(snapshotCacheDir, partDeltaFileName(partId));
+    }
+
+    /**
+     * Partition delta index file. Represents a sequence of page indexes that written to a delta.
+     *
+     * @param delta File with delta pages.
+     * @return File with delta pages index.
+     */
+    public static File partDeltaIndexFile(File delta) {
+        return new File(delta.getParent(), delta.getName() + DELTA_IDX_SUFFIX);
     }
 
     /**
@@ -3282,7 +3306,10 @@ public class IgniteSnapshotManager extends GridCacheSharedManagerAdapter
                 .encryptedFileIoFactory(IgniteSnapshotManager.this.ioFactory, pair.getGroupId()) :
                 IgniteSnapshotManager.this.ioFactory;
 
+            File deltaIdx = partDeltaIndexFile(delta);
+
             try (FileIO fileIo = ioFactory.create(delta, READ);
+                 FileIO idxIo = deltaIdx.exists() ? IgniteSnapshotManager.this.ioFactory.create(deltaIdx, READ) : null;
                  FilePageStore pageStore = (FilePageStore)storeMgr.getPageStoreFactory(pair.getGroupId(), encrypted)
                      .createPageStore(getTypeByPartId(pair.getPartitionId()), snpPart::toPath, v -> {})
             ) {
@@ -3293,9 +3320,65 @@ public class IgniteSnapshotManager extends GridCacheSharedManagerAdapter
 
                 assert totalBytes % pageSize == 0 : "Given file with delta pages has incorrect size: " + fileIo.size();
 
+                int pagesCnt = (int)(totalBytes / pageSize);
+
+                GridIntIterator iter;
+
+                if (!deltaIdx.exists())
+                    iter = U.forRange(0, pagesCnt);
+                else {
+                    assert deltaIdx.length() % 4 /* pageIdx */ == 0 : "Wrong delta index size: " + deltaIdx.length();
+                    assert deltaIdx.length() / 4 == pagesCnt : "Wrong delta index pages count: " + deltaIdx.length();
+
+                    iter = new GridIntIterator() {
+                        private int idx = 0;
+
+                        private Iterator<Integer> sortedIter;
+
+                        @Override public boolean hasNext() {
+                            if (sortedIter == null || !sortedIter.hasNext()) {
+                                try {
+                                    advance();
+                                }
+                                catch (Exception e) {
+                                    throw new IgniteException(e);
+                                }
+                            }
+
+                            return sortedIter.hasNext();
+                        }
+
+                        @Override public int next() {
+                            if (!hasNext())
+                                throw new NoSuchElementException();
+
+                            return sortedIter.next();
+                        }
+
+                        private void advance() throws Exception {
+                            TreeMap<Integer, Integer> sorted = new TreeMap<>();
+
+                            while (idx < pagesCnt && sorted.size() < DELTA_SORT_BATCH_SIZE) {
+                                idxIo.readFully(pageBuf);
+
+                                pageBuf.flip();
+
+                                while (pageBuf.hasRemaining())
+                                    sorted.put(pageBuf.getInt(), idx++);
+
+                                pageBuf.clear();
+                            }
+
+                            sortedIter = sorted.values().iterator();
+                        }
+                    };
+                }
+
                 pageStore.beginRecover();
 
-                for (long pos = 0; pos < totalBytes; pos += pageSize) {
+                while (iter.hasNext()) {
+                    long pos = (long)iter.next() * pageSize;
+
                     long read = fileIo.readFully(pageBuf, pos);
 
                     assert read == pageBuf.capacity();
@@ -3303,9 +3386,10 @@ public class IgniteSnapshotManager extends GridCacheSharedManagerAdapter
                     pageBuf.flip();
 
                     if (log.isDebugEnabled()) {
-                        log.debug("Read page given delta file [path=" + delta.getName() +
-                            ", pageId=" + PageIO.getPageId(pageBuf) + ", pos=" + pos + ", pages=" + (totalBytes / pageSize) +
-                            ", crcBuff=" + FastCrc.calcCrc(pageBuf, pageBuf.limit()) + ", crcPage=" + PageIO.getCrc(pageBuf) + ']');
+                        log.debug("Read page given delta file [path=" + delta.getName() + ", pageId=" +
+                            PageIO.getPageId(pageBuf) + ", index=" + PageIdUtils.pageIndex(PageIO.getPageId(pageBuf)) +
+                            ", pos=" + pos + ", pagesCnt=" + pagesCnt + ", crcBuff=" +
+                            FastCrc.calcCrc(pageBuf, pageBuf.limit()) + ", crcPage=" + PageIO.getCrc(pageBuf) + ']');
 
                         pageBuf.rewind();
                     }

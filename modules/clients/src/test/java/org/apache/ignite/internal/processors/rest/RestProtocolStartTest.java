@@ -17,7 +17,6 @@
 
 package org.apache.ignite.internal.processors.rest;
 
-import java.util.Collections;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteDataStreamer;
 import org.apache.ignite.cache.affinity.rendezvous.RendezvousAffinityFunction;
@@ -101,7 +100,11 @@ public class RestProtocolStartTest extends GridCommonAbstractTest {
 
         assertTrue("Is active " + ignite.cluster().state().active(), ignite.cluster().state().active());
 
-        GridClient gridClient = client();
+        doSleep(300);
+
+        try (TestBinaryClient client = new TestBinaryClient(HOST, BINARY_PORT)) {
+            // Check connected.
+        }
 
         ((TcpDiscoverySpi)ignite.configuration().getDiscoverySpi()).brakeConnection();
 
@@ -117,16 +120,5 @@ public class RestProtocolStartTest extends GridCommonAbstractTest {
         }
 
         assertTrue("Is active " + ignite.cluster().state().active(), ignite.cluster().state().active());
-    }
-
-    /**
-     * @return Client.
-     * @throws GridClientException In case of error.
-     */
-    protected GridClient client() throws GridClientException {
-        return GridClientFactory.start(new GridClientConfiguration()
-            .setConnectTimeout(300)
-            .setServers(Collections
-                .singleton(HOST + ":" + BINARY_PORT)));
     }
 }

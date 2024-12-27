@@ -17,7 +17,6 @@
 
 package org.apache.ignite.internal.processors.rest;
 
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -31,11 +30,6 @@ import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.configuration.ConnectorConfiguration;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteKernal;
-import org.apache.ignite.internal.client.GridClient;
-import org.apache.ignite.internal.client.GridClientCompute;
-import org.apache.ignite.internal.client.GridClientConfiguration;
-import org.apache.ignite.internal.client.GridClientDataConfiguration;
-import org.apache.ignite.internal.client.GridClientFactory;
 import org.apache.ignite.internal.processors.rest.handlers.GridRestCommandHandler;
 import org.apache.ignite.internal.processors.rest.handlers.task.GridTaskCommandHandler;
 import org.apache.ignite.internal.util.typedef.F;
@@ -44,9 +38,9 @@ import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.testframework.junits.common.GridCommonAbstractTest;
 import org.jsr166.ConcurrentLinkedHashMap;
 import org.junit.Test;
+
 import static org.apache.ignite.cache.CacheMode.PARTITIONED;
 import static org.apache.ignite.cache.CacheMode.REPLICATED;
-import static org.apache.ignite.internal.client.GridClientProtocol.TCP;
 
 /**
  * Test for {@code GridTaskCommandHandler}
@@ -67,9 +61,6 @@ public class TaskCommandHandlerSelfTest extends GridCommonAbstractTest {
     /** */
     private static final int MAX_TASK_RESULTS = 10;
 
-    /** */
-    private GridClient client;
-
     /** {@inheritDoc} */
     @Override protected void beforeTestsStarted() throws Exception {
         System.setProperty(IgniteSystemProperties.IGNITE_REST_MAX_TASK_RESULTS, String.valueOf(MAX_TASK_RESULTS));
@@ -82,15 +73,6 @@ public class TaskCommandHandlerSelfTest extends GridCommonAbstractTest {
         System.clearProperty(IgniteSystemProperties.IGNITE_REST_MAX_TASK_RESULTS);
     }
 
-    /** {@inheritDoc} */
-    @Override protected void beforeTest() throws Exception {
-        client = GridClientFactory.start(clientConfiguration());
-    }
-
-    /** {@inheritDoc} */
-    @Override protected void afterTest() throws Exception {
-        GridClientFactory.stop(client.id());
-    }
 
     /** {@inheritDoc} */
     @Override protected IgniteConfiguration getConfiguration(String igniteInstanceName) throws Exception {
@@ -120,36 +102,16 @@ public class TaskCommandHandlerSelfTest extends GridCommonAbstractTest {
     }
 
     /**
-     * @return Client configuration.
-     */
-    private GridClientConfiguration clientConfiguration() {
-        GridClientConfiguration cfg = new GridClientConfiguration();
-
-        GridClientDataConfiguration nullCache = new GridClientDataConfiguration();
-
-        GridClientDataConfiguration cache = new GridClientDataConfiguration();
-
-        cache.setName(PARTITIONED_CACHE_NAME);
-
-        cfg.setDataConfigurations(Arrays.asList(nullCache, cache));
-
-        cfg.setProtocol(TCP);
-        cfg.setServers(Collections.singletonList("localhost:" + BINARY_PORT));
-
-        return cfg;
-    }
-
-    /**
      * @throws Exception If failed.
      */
     @Test
     public void testManyTasksRun() throws Exception {
-        GridClientCompute compute = client.compute();
-
-        for (int i = 0; i < 1000; i++)
-            assertEquals(new Integer("executing".length()), compute.execute(TestTask.class.getName(), "executing"));
-
-        GridClientFactory.stop(client.id(), true);
+        try (TestBinaryClient client = new TestBinaryClient("127.0.0.1", BINARY_PORT)) {
+            for (int i = 0; i < 1000; i++) {
+                assertEquals(new Integer("executing".length()),
+                    client.execute(TestTask.class.getName(), "executing").getResult());
+            }
+        }
 
         IgniteKernal g = (IgniteKernal)grid(0);
 

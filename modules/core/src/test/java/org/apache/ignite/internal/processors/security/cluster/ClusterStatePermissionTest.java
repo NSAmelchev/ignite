@@ -240,7 +240,7 @@ public class ClusterStatePermissionTest extends AbstractSecurityTest {
     /**
      * @return Change state operation depending on {@link #initiator}.
      */
-    private Consumer<ClusterState> initiatorAction(Ignite srv) throws Exception {
+    private Consumer<ClusterState> initiatorAction(Ignite srv) {
         switch (initiator) {
             case SERVER:
                 return (state) -> srv.cluster().state(state);

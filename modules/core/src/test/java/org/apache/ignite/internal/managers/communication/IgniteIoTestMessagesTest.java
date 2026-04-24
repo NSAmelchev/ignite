@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.cluster.ClusterNode;
-import org.apache.ignite.internal.IgniteKernal;
+import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.internal.util.typedef.G;
 import org.apache.ignite.testframework.junits.common.GridCommonAbstractTest;
 import org.junit.Test;
@@ -44,20 +44,16 @@ public class IgniteIoTestMessagesTest extends GridCommonAbstractTest {
     @Test
     public void testIoTestMessages() {
         for (Ignite node : G.allGrids()) {
-            IgniteKernal ignite = (IgniteKernal)node;
+            IgniteEx ignite = (IgniteEx)node;
 
             List<ClusterNode> rmts = new ArrayList<>(ignite.cluster().forRemotes().nodes());
 
             assertEquals(4, rmts.size());
 
             for (ClusterNode rmt : rmts) {
-                ignite.sendIoTest(rmt, new byte[1024], false);
+                ignite.context().io().ioTest().sendIoTest(rmt, new byte[1024], false);
 
-                ignite.sendIoTest(rmt, new byte[1024], true);
-
-                ignite.sendIoTest(rmts, new byte[1024], false);
-
-                ignite.sendIoTest(rmts, new byte[1024], true);
+                ignite.context().io().ioTest().sendIoTest(rmt, new byte[1024], true);
             }
         }
     }

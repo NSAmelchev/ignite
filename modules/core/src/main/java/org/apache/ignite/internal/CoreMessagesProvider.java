@@ -34,6 +34,9 @@ import org.apache.ignite.internal.managers.communication.SessionChannelMessage;
 import org.apache.ignite.internal.managers.deployment.GridDeploymentInfoBean;
 import org.apache.ignite.internal.managers.deployment.GridDeploymentRequest;
 import org.apache.ignite.internal.managers.deployment.GridDeploymentResponse;
+import org.apache.ignite.internal.managers.discovery.IoTestDiscoveryAckMessage;
+import org.apache.ignite.internal.managers.discovery.IoTestDiscoveryMessage;
+import org.apache.ignite.internal.managers.discovery.SecurityAwareCustomMessageWrapper;
 import org.apache.ignite.internal.managers.encryption.ChangeCacheEncryptionRequest;
 import org.apache.ignite.internal.managers.encryption.EncryptionDataBagItem;
 import org.apache.ignite.internal.managers.encryption.GenerateEncryptionKeyRequest;
@@ -639,6 +642,8 @@ public class CoreMessagesProvider extends AbstractMarshallableMessageFactoryProv
         withNoSchema(RecoveryLastReceivedMessage.class);
         withNoSchema(TcpInverseConnectionResponseMessage.class);
         withNoSchema(SessionChannelMessage.class);
+        withNoSchema(IoTestDiscoveryMessage.class);
+        withNoSchema(IoTestDiscoveryAckMessage.class);
 
         // [11700 - 11800]: Datastreamer messages.
         msgIdx = 11700;

@@ -17,7 +17,6 @@
 
 package org.apache.ignite.internal.managers.communication;
 
-import java.util.UUID;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.internal.MarshallableMessage;
 import org.apache.ignite.internal.Order;
@@ -25,19 +24,51 @@ import org.apache.ignite.internal.util.typedef.internal.S;
 import org.apache.ignite.marshaller.Marshaller;
 
 /**
- *
+ * IO test message flow:
+ * <p>
+ *     <b>Send request</b>
+ * </p>
+ * <p>{@link #reqCreateTs} Request create timestamp (JVM time).
+ * <p>
+ *     (queue time)
+ * </p>
+ * <p>{@link #reqSndTs} Request send timestamp (JVM time).
+ * <p>{@link #reqSndTsMillis} Request send timestamp (System time).
+ * <p>
+ *     (network latency, sending to remote node)
+ * <p>
+ * <p>{@link #reqRcvTsMillis} Request received timestamp (System time).
+ * <p>{@link #reqRcvTs} Request receive timestamp (JVM time).
+ * <p>
+ *     (remote node system pool queue time)
+ * </p>
+ * <p>
+ *     <b>Send response</b>
+ * </p>
+ * <p>{@link #reqProcTs} Request process started timestamp (JVM time).
+ * <p>
+ *     (queue time)
+ * </p>
+ * <p>{@link #resSndTs} Response send timestamp (JVM time).
+ * <p>{@link #resSndTsMillis} Response send timestamp (System time).
+ * <p>
+ *     (network latency, sending back)
+ * <p>
+ * <p>{@link #resRcvTsMillis} Response received timestamp (System time).
+ * <p>{@link #resRcvTs} Response receive timestamp (JVM time).
+ * <p>
+ *     (queue time)
+ * </p>
+ * <p>{@link #resProcTs} Response processed timestamp (JVM time).
  */
 public class IgniteIoTestMessage implements MarshallableMessage {
-    /** */
-    private static final byte FLAG_PROC_FROM_NIO = 1;
-
     /** */
     @Order(0)
     long id;
 
     /** */
     @Order(1)
-    byte flags;
+    boolean procFromNioThread;
 
     /** */
     @Order(2)
@@ -92,26 +123,36 @@ public class IgniteIoTestMessage implements MarshallableMessage {
     long resProcTs;
 
     /** */
-    private UUID sndNodeId;
-
-    /**
-     *
-     */
     public IgniteIoTestMessage() {
         // No-op.
     }
 
     /**
-     * @param id Message ID.
-     * @param req Request flag.
+     * Request constructor.
+     *
+     * @param id Test ID.
      * @param payload Payload.
      */
-    public IgniteIoTestMessage(long id, boolean req, byte[] payload) {
+    public IgniteIoTestMessage(long id, byte[] payload, boolean procFromNioThread) {
         this.id = id;
-        this.req = req;
         this.payload = payload;
+        this.procFromNioThread = procFromNioThread;
 
+        req = true;
         reqCreateTs = System.nanoTime();
+    }
+
+    /** Response constructor. */
+    public IgniteIoTestMessage(IgniteIoTestMessage req) {
+        id = req.id;
+
+        reqCreateTs = req.reqCreateTs;
+
+        reqSndTs = req.reqSndTs;
+        reqSndTsMillis = req.reqSndTsMillis;
+
+        reqRcvTs = req.reqRcvTs;
+        reqRcvTsMillis = req.reqRcvTsMillis;
     }
 
     /**
@@ -119,123 +160,65 @@ public class IgniteIoTestMessage implements MarshallableMessage {
      * (otherwise message is submitted to system pool).
      */
     public boolean processFromNioThread() {
-        return isFlag(FLAG_PROC_FROM_NIO);
+        return procFromNioThread;
     }
 
-    /**
-     * @param procFromNioThread {@code True} if message should be processed from NIO thread.
-     */
-    public void processFromNioThread(boolean procFromNioThread) {
-        setFlag(procFromNioThread, FLAG_PROC_FROM_NIO);
-    }
-
-    /**
-     * @param flags Flags.
-     */
-    public void flags(byte flags) {
-        this.flags = flags;
-    }
-
-    /**
-     * @return Flags.
-     */
-    public byte flags() {
-        return flags;
-    }
-
-    /**
-     * Sets flag mask.
-     *
-     * @param flag Set or clear.
-     * @param mask Mask.
-     */
-    private void setFlag(boolean flag, int mask) {
-        flags = flag ? (byte)(flags | mask) : (byte)(flags & ~mask);
-    }
-
-    /**
-     * Reads flag mask.
-     *
-     * @param mask Mask to read.
-     * @return Flag value.
-     */
-    private boolean isFlag(int mask) {
-        return (flags & mask) != 0;
-    }
-
-    /**
-     * @return {@code true} if this is request.
-     */
+    /** @return {@code true} if this is request. */
     public boolean request() {
         return req;
     }
 
-    /**
-     * @return ID.
-     */
-    public long id() {
+    /** @return Test ID. */
+    public long testId() {
         return id;
     }
 
-    /**
-     * @return Request create timestamp.
-     */
+    /** @return Request create timestamp. */
     public long requestCreateTs() {
         return reqCreateTs;
     }
 
-    /**
-     * @return Request send timestamp.
-     */
+    /** @return Request send timestamp. */
     public long requestSendTs() {
         return reqSndTs;
     }
 
-    /**
-     * @return Request receive timestamp.
-     */
+    /** @return Request receive timestamp. */
     public long requestReceiveTs() {
         return reqRcvTs;
     }
 
-    /**
-     * @return Request process started timestamp.
-     */
+    /** @return Request process started timestamp. */
     public long requestProcessTs() {
         return reqProcTs;
     }
 
-    /**
-     * @return Response send timestamp.
-     */
+    /** @return Response send timestamp. */
     public long responseSendTs() {
         return resSndTs;
     }
 
-    /**
-     * @return Response receive timestamp.
-     */
+    /** Response send timestamp (millis) */
+    public long responseSendTsMillis() {
+        return resSndTsMillis;
+    }
+
+    /** @return Response receive timestamp. */
     public long responseReceiveTs() {
         return resRcvTs;
     }
 
-    /**
-     * @return Request send timestamp (millis).
-     */
+    /** @return Request send timestamp (millis). */
     public long requestSendTsMillis() {
         return reqSndTsMillis;
     }
 
-    /**
-     * @return Request received timestamp (millis).
-     */
+    /** @return Request received timestamp (millis). */
     public long requestReceivedTsMillis() {
         return reqRcvTsMillis;
     }
 
-    /**
-     * @return Response received timestamp (millis).
-     */
+    /** @return Response received timestamp (millis). */
     public long responseReceivedTsMillis() {
         return resRcvTsMillis;
     }
@@ -276,52 +259,19 @@ public class IgniteIoTestMessage implements MarshallableMessage {
         }
     }
 
-    /**
-     *
-     */
-    public void copyDataFromRequest(IgniteIoTestMessage req) {
-        reqCreateTs = req.reqCreateTs;
-
-        reqSndTs = req.reqSndTs;
-        reqSndTsMillis = req.reqSndTsMillis;
-
-        reqRcvTs = req.reqRcvTs;
-        reqRcvTsMillis = req.reqRcvTsMillis;
-    }
-
-    /**
-     *
-     */
+    /** */
     public void onRequestProcessed() {
         reqProcTs = System.nanoTime();
     }
 
-    /**
-     *
-     */
+    /** */
     public void onResponseProcessed() {
         resProcTs = System.nanoTime();
     }
 
-    /**
-     * @return Response processed timestamp.
-     */
+    /** @return Response processed timestamp. */
     public long responseProcessedTs() {
         return resProcTs;
-    }
-
-    /**
-     * @return Sender node ID.
-     */
-    public UUID senderNodeId() {
-        return sndNodeId;
-    }
-
-    /**
-     * @param sndNodeId Sender node ID.
-     */
-    public void senderNodeId(UUID sndNodeId) {
-        this.sndNodeId = sndNodeId;
     }
 
     /** {@inheritDoc} */

@@ -17,11 +17,11 @@
 
 package org.apache.ignite.spi.communication.tcp;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteSystemProperties;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.configuration.IgniteConfiguration;
@@ -100,7 +100,14 @@ public class IgniteTcpCommunicationHandshakeWaitTest extends GridCommonAbstractT
 
             assertEquals(3, nodes.size());
 
-            return ignite.context().io().sendIoTest(new ArrayList<>(nodes), null, true).get();
+            nodes.stream().map(n -> ignite.context().io().ioTest().sendIoTest(n, null, true)).forEach(future -> {
+                try {
+                    future.get();
+                }
+                catch (IgniteCheckedException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         });
 
         startGrid("srv3");

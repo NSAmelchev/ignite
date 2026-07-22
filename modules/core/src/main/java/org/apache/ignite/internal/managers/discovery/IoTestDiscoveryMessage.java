@@ -20,14 +20,17 @@ package org.apache.ignite.internal.managers.discovery;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.apache.ignite.IgniteCheckedException;
+import org.apache.ignite.internal.MarshallableMessage;
 import org.apache.ignite.internal.Order;
 import org.apache.ignite.lang.IgniteUuid;
+import org.apache.ignite.marshaller.Marshaller;
 import org.apache.ignite.plugin.extensions.communication.MessageFactory;
 import org.apache.ignite.spi.discovery.DiscoverySpiCustomMessage;
 import org.jetbrains.annotations.Nullable;
 
 /** Mutable message used to record a Discovery SPI ring path. */
-public class IoTestDiscoveryMessage extends DiscoveryServerOnlyCustomMessage {
+public class IoTestDiscoveryMessage extends DiscoveryServerOnlyCustomMessage implements MarshallableMessage {
     /** Payload. */
     @Order(0)
     byte[] payload;
@@ -35,6 +38,14 @@ public class IoTestDiscoveryMessage extends DiscoveryServerOnlyCustomMessage {
     /** Ordered server node path. */
     @Order(1)
     List<UUID> path;
+
+    /** Current hop send timestamp. */
+    @Order(2)
+    long hopSendTsMillis;
+
+    /** Approximate transfer time for every completed hop. */
+    @Order(3)
+    List<Long> hopTimesMillis;
 
     /** Empty constructor for {@link MessageFactory}. */
     public IoTestDiscoveryMessage() {
@@ -47,11 +58,22 @@ public class IoTestDiscoveryMessage extends DiscoveryServerOnlyCustomMessage {
 
         this.payload = payload;
         path = new ArrayList<>();
+        hopTimesMillis = new ArrayList<>();
     }
 
     /** @param nodeId Node that processed this message. */
     public void onProcessed(UUID nodeId) {
         path.add(nodeId);
+    }
+
+    /** {@inheritDoc} */
+    @Override public void prepareMarshal(Marshaller marsh) throws IgniteCheckedException {
+        hopSendTsMillis = System.currentTimeMillis();
+    }
+
+    /** {@inheritDoc} */
+    @Override public void finishUnmarshal(Marshaller marsh, ClassLoader clsLdr) throws IgniteCheckedException {
+        hopTimesMillis.add(System.currentTimeMillis() - hopSendTsMillis);
     }
 
     /** {@inheritDoc} */

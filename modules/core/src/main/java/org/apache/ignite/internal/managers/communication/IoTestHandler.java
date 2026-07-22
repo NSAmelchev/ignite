@@ -264,7 +264,7 @@ public class IoTestHandler {
                         testRes.onDone(e);
                     }
                     finally {
-                        if (remaining.decrementAndGet() == 0 && !testRes.isDone()) {
+                        if (remaining.decrementAndGet() == 0 && !finished.get()) {
                             try {
                                 testRes.onDone(formatResults(results, payloadSize, warmup, duration, threads,
                                     procFromNioThread));
@@ -463,9 +463,6 @@ public class IoTestHandler {
         /** Finished flag shared with workers. */
         private final AtomicBoolean finished;
 
-        /** Completion guard. */
-        private final AtomicBoolean completing = new AtomicBoolean();
-
         /** Constructor. */
         IoTestRunFuture(ExecutorService svc, AtomicBoolean finished) {
             this.svc = svc;
@@ -474,10 +471,8 @@ public class IoTestHandler {
 
         /** {@inheritDoc} */
         @Override protected boolean onDone(@Nullable String res, @Nullable Throwable err, boolean cancel) {
-            if (!completing.compareAndSet(false, true))
+            if (!finished.compareAndSet(false, true))
                 return false;
-
-            finished.set(true);
 
             if (cancel || err != null)
                 svc.shutdownNow();

@@ -93,6 +93,8 @@ public class IoTestCommandTest extends GridCommandHandlerAbstractTest {
         assertTrue(output, output.contains(grid(1).localNode().id().toString()));
         assertTrue(output, output.contains(grid(2).localNode().id().toString()));
         assertTrue(output, output.contains("Ring traversal (us):"));
+        assertTrue(output, output.contains("Approx. per-hop transfer (ms, min/avg/max):"));
+        assertTrue(output, output.contains("Clock assumption: synchronized system clocks"));
     }
 
     /** */

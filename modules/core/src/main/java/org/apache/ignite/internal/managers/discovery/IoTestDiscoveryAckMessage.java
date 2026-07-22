@@ -36,6 +36,13 @@ public class IoTestDiscoveryAckMessage extends DiscoveryServerOnlyCustomMessage 
     @Order(1)
     List<UUID> path;
 
+    /** Approximate transfer time for every completed hop. */
+    @Order(2)
+    List<Long> hopTimesMillis;
+
+    /** Ring traversal time measured locally on the coordinator. */
+    long ringTimeNanos;
+
     /** Empty constructor for {@link MessageFactory}. */
     public IoTestDiscoveryAckMessage() {
         // No-op.
@@ -47,6 +54,7 @@ public class IoTestDiscoveryAckMessage extends DiscoveryServerOnlyCustomMessage 
 
         requestId = msg.id();
         path = new ArrayList<>(msg.path);
+        hopTimesMillis = new ArrayList<>(msg.hopTimesMillis);
     }
 
     /** @return Request message ID. */

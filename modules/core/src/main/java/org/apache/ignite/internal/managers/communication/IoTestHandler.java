@@ -17,32 +17,29 @@
 
 package org.apache.ignite.internal.managers.communication;
 
-import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
-import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteLogger;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.GridTopic;
 import org.apache.ignite.internal.IgniteInternalFuture;
-import org.apache.ignite.internal.util.IgniteUtils;
+import org.apache.ignite.internal.NodeStoppingException;
 import org.apache.ignite.internal.util.future.GridCompoundFuture;
+import org.apache.ignite.internal.util.future.GridFinishedFuture;
 import org.apache.ignite.internal.util.future.GridFutureAdapter;
-import org.apache.ignite.internal.util.lang.IgnitePair;
-import org.apache.ignite.internal.util.typedef.F;
+import org.apache.ignite.internal.util.typedef.internal.A;
 import org.apache.ignite.internal.util.typedef.internal.LT;
 import org.apache.ignite.internal.util.typedef.internal.S;
 import org.apache.ignite.internal.util.typedef.internal.U;
@@ -50,21 +47,33 @@ import org.jetbrains.annotations.Nullable;
 
 import static org.apache.ignite.internal.thread.pool.IgniteThreadPoolExecutor.newFixedThreadPool;
 
-/** */
+/** Communication SPI test handler. */
 public class IoTestHandler {
-    /** */
-    private final static AtomicLong ID_GEN = new AtomicLong();
+    /** Maximum number of histogram buckets across all target nodes. */
+    private static final long MAX_HISTOGRAM_BUCKETS = 10_000;
 
-    /** */
+    /** Test ID generator. */
+    private static final AtomicLong ID_GEN = new AtomicLong();
+
+    /** Kernal context. */
     private final GridKernalContext ctx;
 
-    /** */
+    /** Logger. */
     private final IgniteLogger log;
 
-    /** */
+    /** Pending test requests. */
     private final ConcurrentHashMap<Long, IoTestFuture> ioTests = new ConcurrentHashMap<>();
 
-    /** */
+    /** Stop flag. */
+    private final AtomicBoolean stopping = new AtomicBoolean();
+
+    /** Test-running flag. */
+    private final AtomicBoolean testRunning = new AtomicBoolean();
+
+    /** Active test. */
+    private volatile IoTestRunFuture activeTest;
+
+    /** Constructor. */
     public IoTestHandler(GridKernalContext ctx) {
         this.ctx = ctx;
         log = ctx.log(getClass());
@@ -73,12 +82,15 @@ public class IoTestHandler {
             IgniteIoTestMessage msg0 = (IgniteIoTestMessage)msg;
 
             if (msg0.request()) {
-                IgniteIoTestMessage res = new IgniteIoTestMessage(msg0);
-
-                res.onRequestProcessed();
+                msg0.onRequestProcessed();
 
                 try {
-                    ctx.io().sendToGridTopic(nodeId, GridTopic.TOPIC_IO_TEST, res, GridIoPolicy.SYSTEM_POOL);
+                    ctx.io().sendToGridTopic(
+                        nodeId,
+                        GridTopic.TOPIC_IO_TEST,
+                        new IgniteIoTestMessage(msg0),
+                        GridIoPolicy.SYSTEM_POOL
+                    );
                 }
                 catch (Exception e) {
                     LT.warn(log, "Failed to send IO test response [nodeId=" + nodeId + "]", e);
@@ -89,19 +101,21 @@ public class IoTestHandler {
 
                 IoTestFuture fut = ioTests.get(msg0.testId());
 
-                if (fut == null)
-                    LT.warn(log, "Failed to find IO test future [msg=" + msg0 + ']');
-                else
+                if (fut != null)
                     fut.onDone(msg0);
+                else if (log.isDebugEnabled())
+                    log.debug("Failed to find IO test future [msg=" + msg0 + ']');
             }
         });
     }
 
     /**
+     * Sends one test request to every node.
+     *
      * @param nodes Nodes.
      * @param payload Payload.
-     * @param procFromNioThread If {@code true} message is processed from NIO thread.
-     * @return Response future.
+     * @param procFromNioThread Process messages in NIO threads.
+     * @return Aggregate response future.
      */
     public GridCompoundFuture<IgniteIoTestMessage, Void> sendIoTest(
         List<ClusterNode> nodes,
@@ -110,7 +124,7 @@ public class IoTestHandler {
     ) {
         GridCompoundFuture<IgniteIoTestMessage, Void> resFut = new GridCompoundFuture<>();
 
-        nodes.forEach(n -> resFut.add(sendIoTest(n, payload, procFromNioThread)));
+        nodes.forEach(node -> resFut.add(sendIoTest(node, payload, procFromNioThread)));
 
         resFut.markInitialized();
 
@@ -118,9 +132,11 @@ public class IoTestHandler {
     }
 
     /**
+     * Sends a test request.
+     *
      * @param node Node.
      * @param payload Payload.
-     * @param procFromNioThread If {@code true} message is processed from NIO thread.
+     * @param procFromNioThread Process messages in NIO threads.
      * @return Response future.
      */
     public IgniteInternalFuture<IgniteIoTestMessage> sendIoTest(
@@ -128,303 +144,299 @@ public class IoTestHandler {
         byte[] payload,
         boolean procFromNioThread
     ) {
+        if (stopping.get())
+            return new GridFinishedFuture<>(stoppingException());
+
         long id = ID_GEN.getAndIncrement();
 
         IoTestFuture fut = new IoTestFuture(id);
 
         ioTests.put(id, fut);
 
-        try {
-            IgniteIoTestMessage msg = new IgniteIoTestMessage(id, payload, procFromNioThread);
-
-            ctx.io().sendToGridTopic(node, GridTopic.TOPIC_IO_TEST, msg, GridIoPolicy.SYSTEM_POOL);
-        }
-        catch (IgniteCheckedException e) {
-            fut.onDone(e);
+        if (stopping.get())
+            fut.onDone(stoppingException());
+        else {
+            try {
+                ctx.io().sendToGridTopic(
+                    node,
+                    GridTopic.TOPIC_IO_TEST,
+                    new IgniteIoTestMessage(id, payload, procFromNioThread),
+                    GridIoPolicy.SYSTEM_POOL
+                );
+            }
+            catch (IgniteCheckedException | RuntimeException e) {
+                fut.onDone(e);
+            }
         }
 
         return fut;
     }
 
     /**
+     * Runs a latency test against the supplied nodes.
+     *
      * @param warmup Warmup duration in milliseconds.
      * @param duration Test duration in milliseconds.
      * @param threads Thread count.
-     * @param latencyLimit Max latency in nanoseconds.
-     * @param rangesCnt Ranges count in resulting histogram.
-     * @param payLoadSize Payload size in bytes.
-     * @param procFromNioThread {@code True} to process requests in NIO threads.
-     * @param nodes Nodes participating in test.
+     * @param latencyLimit Maximum expected latency in nanoseconds.
+     * @param rangesCnt Histogram range count.
+     * @param payloadSize Payload size in bytes.
+     * @param procFromNioThread Process messages in NIO threads.
+     * @param nodes Nodes participating in the test.
+     * @return Test result future.
      */
     public IgniteInternalFuture<String> runIoTest(
-        final long warmup,
-        final long duration,
-        final int threads,
-        final long latencyLimit,
-        final int rangesCnt,
-        final int payLoadSize,
-        final boolean procFromNioThread,
-        final List<ClusterNode> nodes
+        long warmup,
+        long duration,
+        int threads,
+        long latencyLimit,
+        int rangesCnt,
+        int payloadSize,
+        boolean procFromNioThread,
+        List<ClusterNode> nodes
     ) {
-        GridFutureAdapter<String> testRes = new GridFutureAdapter<>();
+        A.notEmpty(nodes, "nodes");
+        A.ensure((long)nodes.size() * (rangesCnt + 1) <= MAX_HISTOGRAM_BUCKETS,
+            "nodes * (rangesCnt + 1) must not exceed " + MAX_HISTOGRAM_BUCKETS);
 
-        ExecutorService svc = newFixedThreadPool("io-latency-inspector", ctx.igniteInstanceName(), threads + 1);
+        if (stopping.get())
+            return new GridFinishedFuture<>(stoppingException());
 
-        final AtomicBoolean warmupFinished = new AtomicBoolean();
-        final AtomicBoolean done = new AtomicBoolean();
-        final CyclicBarrier bar = new CyclicBarrier(threads + 1);
-        final LongAdder cnt = new LongAdder();
-        final long sleepDuration = 5000;
-        final byte[] payLoad = new byte[payLoadSize];
-        final Map<UUID, IoTestThreadLocalNodeResults>[] res = new Map[threads];
+        A.ensure(testRunning.compareAndSet(false, true), "Communication IO test is already running.");
 
-        boolean failed = true;
+        List<ClusterNode> testNodes = new ArrayList<>(nodes);
+        ExecutorService svc;
 
         try {
-            svc.execute(new Runnable() {
-                @Override public void run() {
-                    boolean failed = true;
+            svc = newFixedThreadPool("io-latency-inspector", ctx.igniteInstanceName(), threads);
+        }
+        catch (RuntimeException | Error e) {
+            testRunning.set(false);
+
+            throw e;
+        }
+
+        AtomicBoolean finished = new AtomicBoolean();
+        IoTestRunFuture testRes = new IoTestRunFuture(svc, finished);
+        AtomicInteger remaining = new AtomicInteger(threads);
+        AtomicInteger requiredNodeIdx = new AtomicInteger();
+        byte[] payload = new byte[payloadSize];
+        Map<UUID, IoTestNodeResults> results = new ConcurrentHashMap<>();
+        long startNanos = System.nanoTime();
+        long warmupNanos = TimeUnit.MILLISECONDS.toNanos(warmup);
+        long totalNanos = warmupNanos + TimeUnit.MILLISECONDS.toNanos(duration);
+        long responseTimeout = Math.max(1, ctx.config().getFailureDetectionTimeout());
+
+        activeTest = testRes;
+
+        if (stopping.get()) {
+            testRes.onDone(stoppingException());
+
+            return testRes;
+        }
+
+        try {
+            for (int i = 0; i < threads; i++) {
+                int workerIdx = i;
+
+                svc.execute(() -> {
+                    long targetIdx = workerIdx;
 
                     try {
-                        bar.await();
+                        while (!finished.get() && elapsedNanos(startNanos) < warmupNanos) {
+                            ClusterNode node = testNodes.get((int)(targetIdx++ % testNodes.size()));
 
-                        long start = System.currentTimeMillis();
-
-                        if (log.isInfoEnabled())
-                            log.info("IO test started " +
-                                "[warmup=" + warmup +
-                                ", duration=" + duration +
-                                ", threads=" + threads +
-                                ", latencyLimit=" + latencyLimit +
-                                ", rangesCnt=" + rangesCnt +
-                                ", payLoadSize=" + payLoadSize +
-                                ", procFromNioThreads=" + procFromNioThread + ']'
-                            );
-
-                        for (;;) {
-                            if (!warmupFinished.get() && System.currentTimeMillis() - start > warmup) {
-                                if (log.isInfoEnabled())
-                                    log.info("IO test warmup finished.");
-
-                                warmupFinished.set(true);
-
-                                start = System.currentTimeMillis();
-                            }
-
-                            if (warmupFinished.get() && System.currentTimeMillis() - start > duration) {
-                                if (log.isInfoEnabled())
-                                    log.info("IO test finished, will wait for all threads to finish.");
-
-                                done.set(true);
-
-                                bar.await();
-
-                                failed = false;
-
-                                break;
-                            }
-
-                            if (log.isInfoEnabled())
-                                log.info("IO test [opsCnt/sec=" + (cnt.sumThenReset() * 1000 / sleepDuration) +
-                                    ", warmup=" + !warmupFinished.get() +
-                                    ", elapsed=" + (System.currentTimeMillis() - start) + ']');
-
-                            Thread.sleep(sleepDuration);
+                            sendAndMeasure(node, payload, procFromNioThread, responseTimeout);
                         }
 
-                        // At this point all threads have finished the test and
-                        // stored data to the resulting array of maps.
-                        // Need to iterate it over and sum values for all threads.
-                        testRes.onDone(printIoTestResults(res));
+                        for (int idx; !finished.get() &&
+                            (idx = requiredNodeIdx.getAndIncrement()) < testNodes.size(); ) {
+                            recordResult(results, testNodes.get(idx), payload, procFromNioThread,
+                                responseTimeout, rangesCnt, latencyLimit);
+                        }
+
+                        while (!finished.get() && elapsedNanos(startNanos) < totalNanos)
+                            recordResult(results, testNodes.get((int)(targetIdx++ % testNodes.size())), payload,
+                                procFromNioThread,
+                                responseTimeout, rangesCnt, latencyLimit);
                     }
-                    catch (InterruptedException | BrokenBarrierException e) {
-                        U.error(log, "IO test failed.", e);
+                    catch (Exception e) {
+                        testRes.onDone(e);
                     }
                     finally {
-                        if (failed)
-                            bar.reset();
-                    }
-                }
-            });
-
-            for (int i = 0; i < threads; i++) {
-                final int i0 = i;
-
-                res[i] = U.newHashMap(nodes.size());
-
-                svc.execute(new Runnable() {
-                    @Override public void run() {
-                        boolean failed = true;
-                        ThreadLocalRandom rnd = ThreadLocalRandom.current();
-                        int size = nodes.size();
-                        Map<UUID, IoTestThreadLocalNodeResults> res0 = res[i0];
-
-                        try {
-                            boolean warmupFinished0 = false;
-
-                            bar.await();
-
-                            for (;;) {
-                                if (done.get())
-                                    break;
-
-                                if (!warmupFinished0)
-                                    warmupFinished0 = warmupFinished.get();
-
-                                ClusterNode node = nodes.get(rnd.nextInt(size));
-
-                                IgniteIoTestMessage msg = sendIoTest(node, payLoad, procFromNioThread).get();
-
-                                cnt.increment();
-
-                                IoTestThreadLocalNodeResults nodeRes = res0.computeIfAbsent(node.id(),
-                                    k -> new IoTestThreadLocalNodeResults(rangesCnt, latencyLimit));
-
-                                nodeRes.onResult(msg);
+                        if (remaining.decrementAndGet() == 0 && !testRes.isDone()) {
+                            try {
+                                testRes.onDone(formatResults(results, payloadSize, warmup, duration, threads,
+                                    procFromNioThread));
                             }
-
-                            bar.await();
-
-                            failed = false;
-                        }
-                        catch (Exception e) {
-                            U.error(log, "IO test worker thread failed.", e);
-                        }
-                        finally {
-                            if (failed)
-                                bar.reset();
+                            catch (RuntimeException e) {
+                                testRes.onDone(e);
+                            }
                         }
                     }
                 });
             }
-
-            failed = false;
         }
-        finally {
-            if (failed)
-                U.shutdownNow(GridIoManager.class, svc, log);
+        catch (RuntimeException e) {
+            testRes.onDone(e);
         }
 
         return testRes;
     }
 
-    /**
-     * @param rawRes Resulting map.
-     */
-    private String printIoTestResults(
-        Map<UUID, IoTestThreadLocalNodeResults>[] rawRes
-    ) {
-        Map<UUID, IoTestNodeResults> res = new HashMap<>();
+    /** Stops this handler and completes pending requests. */
+    void stop() {
+        if (stopping.compareAndSet(false, true)) {
+            NodeStoppingException err = stoppingException();
 
-        for (Map<UUID, IoTestThreadLocalNodeResults> r : rawRes) {
-            for (Map.Entry<UUID, IoTestThreadLocalNodeResults> e : r.entrySet()) {
-                IoTestNodeResults r0 = res.get(e.getKey());
+            ioTests.values().forEach(fut -> fut.onDone(err));
 
-                if (r0 == null)
-                    res.put(e.getKey(), r0 = new IoTestNodeResults());
+            IoTestRunFuture test = activeTest;
 
-                r0.add(e.getValue());
-            }
+            if (test != null)
+                test.onDone(err);
         }
+    }
 
-        StringBuilder b = new StringBuilder(U.nl())
-            .append("IO test results (round-trip count per each latency bin).")
-            .append(U.nl());
+    /** Records one round-trip result. */
+    private void recordResult(
+        Map<UUID, IoTestNodeResults> results,
+        ClusterNode node,
+        byte[] payload,
+        boolean procFromNioThread,
+        long responseTimeout,
+        int rangesCnt,
+        long latencyLimit
+    ) throws IgniteCheckedException {
+        IgniteIoTestMessage res = sendAndMeasure(node, payload, procFromNioThread, responseTimeout);
 
-        for (Map.Entry<UUID, IoTestNodeResults> e : res.entrySet()) {
-            ClusterNode node = ctx.discovery().node(e.getKey());
+        results.computeIfAbsent(node.id(), ignored -> new IoTestNodeResults(rangesCnt, latencyLimit))
+            .onResult(res);
+    }
 
-            long binLatencyMcs = e.getValue().binLatencyMcs();
+    /** Sends a request and measures its round-trip time on the local node. */
+    private IgniteIoTestMessage sendAndMeasure(
+        ClusterNode node,
+        byte[] payload,
+        boolean procFromNioThread,
+        long responseTimeout
+    ) throws IgniteCheckedException {
+        IgniteInternalFuture<IgniteIoTestMessage> fut = sendIoTest(node, payload, procFromNioThread);
 
-            b.append("Node ID: ").append(e.getKey()).append(" (addrs=")
-                .append(node != null ? node.addresses().toString() : "n/a")
-                .append(", binLatency=").append(binLatencyMcs).append("mcs")
-                .append(')').append(U.nl());
+        try {
+            return fut.get(responseTimeout);
+        }
+        catch (IgniteCheckedException e) {
+            throw new IgniteCheckedException("Communication SPI test request failed [nodeId=" + node.id() +
+                ", addresses=" + node.addresses() + ']', e);
+        }
+        finally {
+            if (!fut.isDone())
+                fut.cancel();
+        }
+    }
 
-            b.append("Latency bin, mcs | Count exclusive | Percentage exclusive | " +
-                "Count inclusive | Percentage inclusive ").append(U.nl());
+    /** Returns monotonic elapsed time. */
+    private static long elapsedNanos(long startNanos) {
+        return System.nanoTime() - startNanos;
+    }
 
-            long[] nodeRes = e.getValue().resLatency;
+    /** Formats test results. */
+    private String formatResults(
+        Map<UUID, IoTestNodeResults> rawResults,
+        int payloadSize,
+        long warmup,
+        long duration,
+        int threads,
+        boolean procFromNioThread
+    ) {
+        Map<UUID, IoTestNodeResults> results = new TreeMap<>(rawResults);
 
-            long sum = 0;
+        ClusterNode source = ctx.discovery().localNode();
+        StringBuilder b = new StringBuilder("Communication SPI test").append(U.nl())
+            .append("Source node: ").append(source.id()).append(" [addresses=").append(source.addresses()).append(']')
+            .append(U.nl())
+            .append("Payload: ").append(payloadSize).append(" bytes each way").append(U.nl())
+            .append("Message handling: ").append(procFromNioThread ? "NIO thread" : "system pool").append(U.nl())
+            .append("Warmup: ").append(warmup).append(" ms | Duration: ").append(duration)
+            .append(" ms | Threads: ").append(threads).append(U.nl());
 
-            for (int i = 0; i < nodeRes.length; i++)
-                sum += nodeRes[i];
+        for (Map.Entry<UUID, IoTestNodeResults> entry : results.entrySet()) {
+            ClusterNode node = ctx.discovery().node(entry.getKey());
+            IoTestNodeResults nodeResults = entry.getValue();
 
-            long curSum = 0;
+            b.append(U.nl())
+                .append("Target node: ").append(entry.getKey()).append(" [addresses=")
+                .append(node != null ? node.addresses() : "n/a")
+                .append(']').append(U.nl())
+                .append("Samples: ").append(nodeResults.count).append(U.nl())
+                .append(String.format(Locale.ROOT, "Round-trip (us): min=%.3f, avg=%.3f, max=%.3f%n",
+                    nodeResults.minLatency / 1_000.0,
+                    nodeResults.totalLatency / (double)nodeResults.count / 1_000,
+                    nodeResults.maxLatency / 1_000.0))
+                .append("Local stages (us, min/avg/max):").append(U.nl());
 
-            for (int i = 0; i < nodeRes.length; i++) {
-                curSum += nodeRes[i];
+            appendTiming(b, "Source send queue", nodeResults.reqSndQueue, 1_000);
+            appendTiming(b, "Target request dispatch", nodeResults.reqRcvQueue, 1_000);
+            appendTiming(b, "Target response send queue", nodeResults.resSndQueue, 1_000);
+            appendTiming(b, "Source response dispatch", nodeResults.resRcvQueue, 1_000);
 
-                if (i < nodeRes.length - 1)
-                    b.append(String.format("<%11d mcs | %15d | %19.6f%% | %15d | %19.6f%%\n",
-                        (i + 1) * binLatencyMcs,
-                        nodeRes[i], (100.0 * nodeRes[i]) / sum,
-                        curSum, (100.0 * curSum) / sum));
-                else
-                    b.append(String.format(">%11d mcs | %15d | %19.6f%% | %15d | %19.6f%%\n",
-                        i * binLatencyMcs,
-                        nodeRes[i], (100.0 * nodeRes[i]) / sum,
-                        curSum, (100.0 * curSum) / sum));
+            b.append("Approx. one-way transfer (ms, min/avg/max):").append(U.nl())
+                .append("  Clock assumption: synchronized system clocks; negative values indicate clock skew.")
+                .append(U.nl());
+
+            appendTiming(b, "Request (source serialize -> target deserialize)", nodeResults.reqWireTime, 1);
+            appendTiming(b, "Response (target serialize -> source deserialize)", nodeResults.resWireTime, 1);
+
+            b.append("Histogram:").append(U.nl());
+
+            for (int i = 0; i < nodeResults.resLatency.length; i++) {
+                double lowerBound = nodeResults.binUpperBound(i) / 1_000.0;
+                String range = i < nodeResults.resLatency.length - 1
+                    ? String.format(Locale.ROOT, "[%.3f, %.3f) us", lowerBound,
+                        nodeResults.binUpperBound(i + 1) / 1_000.0)
+                    : String.format(Locale.ROOT, "[%.3f, +inf) us", lowerBound);
+
+                b.append(String.format(Locale.ROOT, "  %-31s %d (%.2f%%)%n",
+                    range + ':',
+                    nodeResults.resLatency[i],
+                    100.0 * nodeResults.resLatency[i] / nodeResults.count));
             }
-
-            b.append(U.nl()).append("Total latency (ns): ").append(U.nl())
-                .append(String.format("%15d", e.getValue().totalLatency)).append(U.nl());
-
-            b.append(U.nl()).append("Max latencies (ns):").append(U.nl());
-            format(b, e.getValue().maxLatency);
-
-            b.append(U.nl()).append("Max request send queue times (ns):").append(U.nl());
-            format(b, e.getValue().maxReqSendQueueTime);
-
-            b.append(U.nl()).append("Max request receive queue times (ns):").append(U.nl());
-            format(b, e.getValue().maxReqRcvQueueTime);
-
-            b.append(U.nl()).append("Max response send queue times (ns):").append(U.nl());
-            format(b, e.getValue().maxResSendQueueTime);
-
-            b.append(U.nl()).append("Max response receive queue times (ns):").append(U.nl());
-            format(b, e.getValue().maxResRcvQueueTime);
-
-            b.append(U.nl()).append("Max request wire times (millis):").append(U.nl());
-            format(b, e.getValue().maxReqWireTimeMillis);
-
-            b.append(U.nl()).append("Max response wire times (millis):").append(U.nl());
-            format(b, e.getValue().maxResWireTimeMillis);
-
-            b.append(U.nl());
         }
 
         return b.toString();
     }
 
-    /**
-     * @param b Builder.
-     * @param pairs Pairs to format.
-     */
-    private static void format(StringBuilder b, Collection<IgnitePair<Long>> pairs) {
-        for (IgnitePair<Long> p : pairs) {
-            b.append(String.format("%15d", p.get1()))
-                .append(" ")
-                .append(IgniteUtils.DEBUG_DATE_FMT.format(Instant.ofEpochMilli(p.get2())))
-                .append(U.nl());
-        }
+    /** Appends min/average/max timing values. */
+    private static void appendTiming(StringBuilder b, String name, TimingStats timing, double divisor) {
+        b.append(String.format(Locale.ROOT, "  %s: min=%.3f, avg=%.3f, max=%.3f%n",
+            name, timing.min / divisor, timing.average() / divisor, timing.max / divisor));
     }
 
-    /** */
+    /** Creates a node-stopping error. */
+    private NodeStoppingException stoppingException() {
+        return new NodeStoppingException("IO test has been cancelled because the local node is stopping: " +
+            ctx.localNodeId());
+    }
+
+    /** Pending request future. */
     private class IoTestFuture extends GridFutureAdapter<IgniteIoTestMessage> {
-        /** */
+        /** Test ID. */
         private final long id;
 
-        /** @param id Test ID. */
+        /** Constructor. */
         IoTestFuture(long id) {
             this.id = id;
         }
 
         /** {@inheritDoc} */
-        @Override public boolean onDone(IgniteIoTestMessage res, @Nullable Throwable err) {
-            if (super.onDone(res, err)) {
-                ioTests.remove(id);
+        @Override protected boolean onDone(
+            @Nullable IgniteIoTestMessage res,
+            @Nullable Throwable err,
+            boolean cancel
+        ) {
+            if (super.onDone(res, err, cancel)) {
+                ioTests.remove(id, this);
 
                 return true;
             }
@@ -433,208 +445,158 @@ public class IoTestHandler {
         }
 
         /** {@inheritDoc} */
+        @Override public boolean cancel() {
+            return onCancelled();
+        }
+
+        /** {@inheritDoc} */
         @Override public String toString() {
             return S.toString(IoTestFuture.class, this);
         }
     }
 
-    /** */
-    private static class IoTestThreadLocalNodeResults {
-        /** */
+    /** Running test future. */
+    private class IoTestRunFuture extends GridFutureAdapter<String> {
+        /** Test executor. */
+        private final ExecutorService svc;
+
+        /** Finished flag shared with workers. */
+        private final AtomicBoolean finished;
+
+        /** Completion guard. */
+        private final AtomicBoolean completing = new AtomicBoolean();
+
+        /** Constructor. */
+        IoTestRunFuture(ExecutorService svc, AtomicBoolean finished) {
+            this.svc = svc;
+            this.finished = finished;
+        }
+
+        /** {@inheritDoc} */
+        @Override protected boolean onDone(@Nullable String res, @Nullable Throwable err, boolean cancel) {
+            if (!completing.compareAndSet(false, true))
+                return false;
+
+            finished.set(true);
+
+            if (cancel || err != null)
+                svc.shutdownNow();
+            else
+                svc.shutdown();
+
+            activeTest = null;
+            testRunning.set(false);
+
+            return super.onDone(res, err, cancel);
+        }
+
+        /** {@inheritDoc} */
+        @Override public boolean cancel() {
+            return onCancelled();
+        }
+    }
+
+    /** Aggregated node results. */
+    private static class IoTestNodeResults {
+        /** Histogram. */
         private final long[] resLatency;
 
-        /** */
+        /** Histogram range count. */
         private final int rangesCnt;
 
-        /** */
-        private long totalLatency;
-
-        /** */
-        private long maxLatency;
-
-        /** */
-        private long maxLatencyTs;
-
-        /** */
-        private long maxReqSendQueueTime;
-
-        /** */
-        private long maxReqSendQueueTimeTs;
-
-        /** */
-        private long maxReqRcvQueueTime;
-
-        /** */
-        private long maxReqRcvQueueTimeTs;
-
-        /** */
-        private long maxResSendQueueTime;
-
-        /** */
-        private long maxResSendQueueTimeTs;
-
-        /** */
-        private long maxResRcvQueueTime;
-
-        /** */
-        private long maxResRcvQueueTimeTs;
-
-        /** */
-        private long maxReqWireTimeMillis;
-
-        /** */
-        private long maxReqWireTimeTs;
-
-        /** */
-        private long maxResWireTimeMillis;
-
-        /** */
-        private long maxResWireTimeTs;
-
-        /** */
+        /** Maximum expected latency. */
         private final long latencyLimit;
 
-        /**
-         * @param rangesCnt Ranges count.
-         * @param latencyLimit
-         */
-        public IoTestThreadLocalNodeResults(int rangesCnt, long latencyLimit) {
+        /** Total latency. */
+        private long totalLatency;
+
+        /** Minimum latency. */
+        private long minLatency = Long.MAX_VALUE;
+
+        /** Maximum latency. */
+        private long maxLatency;
+
+        /** Sample count. */
+        private long count;
+
+        /** Request send queue statistics. */
+        private final TimingStats reqSndQueue = new TimingStats();
+
+        /** Request receive queue statistics. */
+        private final TimingStats reqRcvQueue = new TimingStats();
+
+        /** Response send queue statistics. */
+        private final TimingStats resSndQueue = new TimingStats();
+
+        /** Response receive queue statistics. */
+        private final TimingStats resRcvQueue = new TimingStats();
+
+        /** Approximate request transfer statistics. */
+        private final TimingStats reqWireTime = new TimingStats();
+
+        /** Approximate response transfer statistics. */
+        private final TimingStats resWireTime = new TimingStats();
+
+        /** Constructor. */
+        IoTestNodeResults(int rangesCnt, long latencyLimit) {
             this.rangesCnt = rangesCnt;
             this.latencyLimit = latencyLimit;
 
             resLatency = new long[rangesCnt + 1];
         }
 
-        /** */
-        public void onResult(IgniteIoTestMessage msg) {
-            long now = System.currentTimeMillis();
-
-            long latency = msg.responseProcessedTs() - msg.requestCreateTs();
-
-            int idx = latency >= latencyLimit ?
-                rangesCnt /* Timed out. */ :
-                (int)Math.floor((1.0 * latency) / ((1.0 * latencyLimit) / rangesCnt));
+        /** Adds a sample. */
+        synchronized void onResult(IgniteIoTestMessage msg) {
+            long latency = msg.roundTripNanos();
+            int idx = latency >= latencyLimit
+                ? rangesCnt
+                : (int)(latency * (double)rangesCnt / latencyLimit);
 
             resLatency[idx]++;
-
             totalLatency += latency;
+            minLatency = Math.min(minLatency, latency);
+            maxLatency = Math.max(maxLatency, latency);
+            count++;
 
-            if (maxLatency < latency) {
-                maxLatency = latency;
-                maxLatencyTs = now;
-            }
+            reqSndQueue.add(msg.requestSendQueueNanos());
+            reqRcvQueue.add(msg.requestReceiveQueueNanos());
+            resSndQueue.add(msg.responseSendQueueNanos());
+            resRcvQueue.add(msg.responseReceiveQueueNanos());
+            reqWireTime.add(msg.requestWireTimeMillis());
+            resWireTime.add(msg.responseWireTimeMillis());
+        }
 
-            long reqSndQueueTime = msg.requestSendTs() - msg.requestCreateTs();
-
-            if (maxReqSendQueueTime < reqSndQueueTime) {
-                maxReqSendQueueTime = reqSndQueueTime;
-                maxReqSendQueueTimeTs = now;
-            }
-
-            long reqRcvQueueTime = msg.requestProcessTs() - msg.requestReceiveTs();
-
-            if (maxReqRcvQueueTime < reqRcvQueueTime) {
-                maxReqRcvQueueTime = reqRcvQueueTime;
-                maxReqRcvQueueTimeTs = now;
-            }
-
-            long resSndQueueTime = msg.responseSendTs() - msg.requestProcessTs();
-
-            if (maxResSendQueueTime < resSndQueueTime) {
-                maxResSendQueueTime = resSndQueueTime;
-                maxResSendQueueTimeTs = now;
-            }
-
-            long resRcvQueueTime = msg.responseProcessedTs() - msg.responseReceiveTs();
-
-            if (maxResRcvQueueTime < resRcvQueueTime) {
-                maxResRcvQueueTime = resRcvQueueTime;
-                maxResRcvQueueTimeTs = now;
-            }
-
-            long reqWireTimeMillis = msg.requestReceivedTsMillis() - msg.requestSendTsMillis();
-
-            if (maxReqWireTimeMillis < reqWireTimeMillis) {
-                maxReqWireTimeMillis = reqWireTimeMillis;
-                maxReqWireTimeTs = now;
-            }
-
-            long resWireTimeMillis = msg.responseReceivedTsMillis() - msg.requestSendTsMillis();
-
-            if (maxResWireTimeMillis < resWireTimeMillis) {
-                maxResWireTimeMillis = resWireTimeMillis;
-                maxResWireTimeTs = now;
-            }
+        /** Returns the upper bound of a histogram bin. */
+        double binUpperBound(int bin) {
+            return latencyLimit * (double)bin / rangesCnt;
         }
     }
 
-    /** */
-    private static class IoTestNodeResults {
-        /** */
-        private long latencyLimit;
+    /** Min/average/max accumulator. */
+    private static class TimingStats {
+        /** Minimum. */
+        private long min = Long.MAX_VALUE;
 
-        /** */
-        private long[] resLatency;
+        /** Maximum. */
+        private long max = Long.MIN_VALUE;
 
-        /** */
-        private long totalLatency;
+        /** Sum. */
+        private double total;
 
-        /** */
-        private Collection<IgnitePair<Long>> maxLatency = new ArrayList<>();
+        /** Count. */
+        private long count;
 
-        /** */
-        private Collection<IgnitePair<Long>> maxReqSendQueueTime = new ArrayList<>();
-
-        /** */
-        private Collection<IgnitePair<Long>> maxReqRcvQueueTime = new ArrayList<>();
-
-        /** */
-        private Collection<IgnitePair<Long>> maxResSendQueueTime = new ArrayList<>();
-
-        /** */
-        private Collection<IgnitePair<Long>> maxResRcvQueueTime = new ArrayList<>();
-
-        /** */
-        private Collection<IgnitePair<Long>> maxReqWireTimeMillis = new ArrayList<>();
-
-        /** */
-        private Collection<IgnitePair<Long>> maxResWireTimeMillis = new ArrayList<>();
-
-        /**
-         * @param res Node results to add.
-         */
-        public void add(IoTestThreadLocalNodeResults res) {
-            if (resLatency == null) {
-                resLatency = res.resLatency.clone();
-                latencyLimit = res.latencyLimit;
-            }
-            else {
-                assert latencyLimit == res.latencyLimit;
-                assert resLatency.length == res.resLatency.length;
-
-                for (int i = 0; i < resLatency.length; i++)
-                    resLatency[i] += res.resLatency[i];
-            }
-
-            totalLatency += res.totalLatency;
-
-            maxLatency.add(F.pair(res.maxLatency, res.maxLatencyTs));
-            maxReqSendQueueTime.add(F.pair(res.maxReqSendQueueTime, res.maxReqSendQueueTimeTs));
-            maxReqRcvQueueTime.add(F.pair(res.maxReqRcvQueueTime, res.maxReqRcvQueueTimeTs));
-            maxResSendQueueTime.add(F.pair(res.maxResSendQueueTime, res.maxResSendQueueTimeTs));
-            maxResRcvQueueTime.add(F.pair(res.maxResRcvQueueTime, res.maxResRcvQueueTimeTs));
-            maxReqWireTimeMillis.add(F.pair(res.maxReqWireTimeMillis, res.maxReqWireTimeTs));
-            maxResWireTimeMillis.add(F.pair(res.maxResWireTimeMillis, res.maxResWireTimeTs));
+        /** Adds a value. */
+        void add(long val) {
+            min = Math.min(min, val);
+            max = Math.max(max, val);
+            total += val;
+            count++;
         }
 
-        /**
-         * @return Bin latency in microseconds.
-         */
-        public long binLatencyMcs() {
-            if (resLatency == null)
-                throw new IllegalStateException();
-
-            return latencyLimit / (1000 * (resLatency.length - 1));
+        /** @return Average. */
+        double average() {
+            return total / count;
         }
     }
 }

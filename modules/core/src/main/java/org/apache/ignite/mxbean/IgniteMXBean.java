@@ -627,7 +627,7 @@ public interface IgniteMXBean {
      * @param rangesCnt Ranges count in resulting histogram.
      * @param payLoadSize Payload size in bytes.
      * @param procFromNioThread {@code True} to process requests in NIO threads.
-     * @deprecated Use the 'io-test' command instead.
+     * @deprecated Use the {@code io-test} command instead.
      */
     @Deprecated
     @MXBeanDescription("Runs IO latency test against all remote server nodes in cluster.")

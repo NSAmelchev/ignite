@@ -21,6 +21,7 @@ import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.internal.management.io.IoTestCommand;
 import org.junit.Test;
 
+import static org.apache.ignite.internal.commandline.CommandHandler.EXIT_CODE_INVALID_ARGUMENTS;
 import static org.apache.ignite.internal.commandline.CommandHandler.EXIT_CODE_OK;
 import static org.apache.ignite.util.SystemViewCommandTest.NODE_ID;
 
@@ -38,16 +39,69 @@ public class IoTestCommandTest extends GridCommandHandlerAbstractTest {
     /** */
     @Test
     public void testCommunication() throws Exception {
-        IgniteEx srv = startGrids(3);
+        IgniteEx srv = startGrids(2);
 
-        executeCommand(EXIT_CODE_OK, "--io-test", "communication", NODE_ID, srv.localNode().id().toString());
+        executeCommand(
+            EXIT_CODE_OK,
+            "--io-test", "communication",
+            NODE_ID, srv.localNode().id().toString(),
+            "--warmup", "0",
+            "--duration", "100",
+            "--threads", "1",
+            "--payload-size", "32"
+        );
+
+        String output = String.valueOf(lastOperationResult);
+
+        assertTrue(output, output.contains("Communication SPI test"));
+        assertTrue(output, output.contains("Source node: " + srv.localNode().id()));
+        assertTrue(output, output.contains("Payload: 32 bytes each way"));
+        assertTrue(output, output.contains("Message handling: system pool"));
+        assertTrue(output, output.contains("Target node: " + grid(1).localNode().id()));
+        assertFalse(output, output.contains("Target node: " + srv.localNode().id()));
+        assertTrue(output, output.contains("Round-trip (us):"));
+        assertTrue(output, output.contains("Local stages (us, min/avg/max):"));
+        assertTrue(output, output.contains("Source send queue:"));
+        assertTrue(output, output.contains("Target request dispatch:"));
+        assertTrue(output, output.contains("Approx. one-way transfer (ms, min/avg/max):"));
+        assertTrue(output, output.contains("Clock assumption: synchronized system clocks"));
+        assertTrue(output, output.contains("Request (source serialize -> target deserialize):"));
+        assertTrue(output, output.contains("Response (target serialize -> source deserialize):"));
     }
 
     /** */
     @Test
     public void testDiscovery() throws Exception {
-        IgniteEx srv = startGrids(3);
+        startGrids(3);
 
-        executeCommand(EXIT_CODE_OK, "--io-test", "discovery");
+        executeCommand(
+            EXIT_CODE_OK,
+            "--io-test", "discovery",
+            "--samples", "3",
+            "--interval", "10",
+            "--payload-size", "32"
+        );
+
+        String output = String.valueOf(lastOperationResult);
+
+        assertTrue(output, output.contains("TcpDiscoverySpi ring test"));
+        assertTrue(output, output.contains("Coordinator: " + grid(0).localNode().id()));
+        assertTrue(output, output.contains("Samples: 3 | Interval: 10 ms"));
+        assertTrue(output, output.contains("Request payload: 32 bytes"));
+        assertTrue(output, output.contains("Request path:"));
+        assertTrue(output, output.contains(grid(0).localNode().id().toString()));
+        assertTrue(output, output.contains(grid(1).localNode().id().toString()));
+        assertTrue(output, output.contains(grid(2).localNode().id().toString()));
+        assertTrue(output, output.contains("Ring traversal (us):"));
+    }
+
+    /** */
+    @Test
+    public void testInvalidPayloadSize() {
+        executeCommand(
+            EXIT_CODE_INVALID_ARGUMENTS,
+            "--io-test", "discovery",
+            "--payload-size", "65537"
+        );
     }
 }

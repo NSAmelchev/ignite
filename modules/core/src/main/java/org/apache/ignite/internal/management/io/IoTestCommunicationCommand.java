@@ -30,7 +30,7 @@ import static org.apache.ignite.internal.management.api.CommandUtils.node;
 public class IoTestCommunicationCommand implements ComputeCommand<IoTestCommunicationCommandArg, String> {
     /** {@inheritDoc} */
     @Override public String description() {
-        return "Runs IO latency test against all remote server nodes in cluster.";
+        return "Tests Communication SPI latency to all remote server nodes.";
     }
 
     /** {@inheritDoc} */
@@ -44,7 +44,10 @@ public class IoTestCommunicationCommand implements ComputeCommand<IoTestCommunic
     }
 
     /** {@inheritDoc} */
-    @Override public @Nullable Collection<ClusterNode> nodes(Collection<ClusterNode> nodes, IoTestCommunicationCommandArg arg) {
+    @Override public @Nullable Collection<ClusterNode> nodes(
+        Collection<ClusterNode> nodes,
+        IoTestCommunicationCommandArg arg
+    ) {
         return node(arg.nodeId(), nodes);
     }
 

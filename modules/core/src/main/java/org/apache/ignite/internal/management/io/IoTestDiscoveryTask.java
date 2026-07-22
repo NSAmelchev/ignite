@@ -18,10 +18,12 @@
 package org.apache.ignite.internal.management.io;
 
 import org.apache.ignite.IgniteException;
+import org.apache.ignite.internal.processors.task.GridInternal;
 import org.apache.ignite.internal.visor.VisorJob;
 import org.apache.ignite.internal.visor.VisorOneNodeTask;
 
 /** */
+@GridInternal
 public class IoTestDiscoveryTask extends VisorOneNodeTask<IoTestDiscoveryCommandArg, String> {
     /** Serial version uid. */
     private static final long serialVersionUID = 0L;
@@ -48,11 +50,12 @@ public class IoTestDiscoveryTask extends VisorOneNodeTask<IoTestDiscoveryCommand
 
         /** {@inheritDoc} */
         @Override protected String run(IoTestDiscoveryCommandArg arg) throws IgniteException {
-            String s = ignite.context().discovery().ioTest().runTest(1000, 1000, null);
-
-            ignite.context().log("qwe").info("MY s=" + s);
-
-            return s;
+            return ignite.context().discovery().ioTest().runTest(
+                arg.samples(),
+                arg.interval(),
+                arg.payloadSize(),
+                this::isCancelled
+            );
         }
     }
 }

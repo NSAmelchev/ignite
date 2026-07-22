@@ -18,12 +18,17 @@
 package org.apache.ignite.internal.management.io;
 
 import java.util.ArrayList;
+import java.util.List;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
+import org.apache.ignite.cluster.ClusterNode;
+import org.apache.ignite.internal.IgniteInternalFuture;
+import org.apache.ignite.internal.processors.task.GridInternal;
 import org.apache.ignite.internal.visor.VisorJob;
 import org.apache.ignite.internal.visor.VisorOneNodeTask;
 
 /** */
+@GridInternal
 public class IoTestCommunicationTask extends VisorOneNodeTask<IoTestCommunicationCommandArg, String> {
     /** Serial version uid. */
     private static final long serialVersionUID = 0L;
@@ -38,6 +43,9 @@ public class IoTestCommunicationTask extends VisorOneNodeTask<IoTestCommunicatio
         /** */
         private static final long serialVersionUID = 0L;
 
+        /** Running test. */
+        private transient volatile IgniteInternalFuture<String> testFut;
+
         /**
          * Create job with specified argument.
          *
@@ -50,20 +58,56 @@ public class IoTestCommunicationTask extends VisorOneNodeTask<IoTestCommunicatio
 
         /** {@inheritDoc} */
         @Override protected String run(IoTestCommunicationCommandArg arg) throws IgniteException {
+            List<ClusterNode> nodes = new ArrayList<>(ignite.cluster().forServers().forRemotes().nodes());
+
+            if (nodes.isEmpty())
+                throw new IgniteException("No remote server nodes found.");
+
+            testFut = ignite.context().io().ioTest().runIoTest(
+                arg.warmup(),
+                arg.duration(),
+                arg.threads(),
+                arg.maxLatency(),
+                arg.rangesCnt(),
+                arg.payloadSize(),
+                arg.procFromNioThread(),
+                nodes
+            );
+
             try {
-                return ignite.context().io().ioTest().runIoTest(
-                    arg.warmup(),
-                    arg.duration(),
-                    arg.threads(),
-                    arg.maxLatency(),
-                    arg.rangesCnt(),
-                    arg.payLoadSize(),
-                    arg.procFromNioThread(),
-                    new ArrayList<>(ignite.cluster().forServers().forRemotes().nodes())
-                ).get();
+                if (isCancelled())
+                    testFut.cancel();
+
+                return testFut.get();
             }
             catch (IgniteCheckedException e) {
-                throw new RuntimeException(e);
+                try {
+                    testFut.cancel();
+                }
+                catch (IgniteCheckedException cancelErr) {
+                    e.addSuppressed(cancelErr);
+                }
+
+                throw new IgniteException("Communication SPI test failed.", e);
+            }
+            finally {
+                testFut = null;
+            }
+        }
+
+        /** {@inheritDoc} */
+        @Override public void cancel() {
+            super.cancel();
+
+            IgniteInternalFuture<String> fut = testFut;
+
+            if (fut != null) {
+                try {
+                    fut.cancel();
+                }
+                catch (IgniteCheckedException ignored) {
+                    // No-op.
+                }
             }
         }
     }

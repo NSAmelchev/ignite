@@ -18,19 +18,19 @@
 package org.apache.ignite.internal.management.io;
 
 import java.util.Collection;
-import java.util.Collections;
 import java.util.function.Consumer;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.internal.management.api.ComputeCommand;
 import org.apache.ignite.internal.util.typedef.F;
-import org.apache.ignite.internal.util.typedef.internal.U;
 import org.jetbrains.annotations.Nullable;
+
+import static org.apache.ignite.internal.management.api.CommandUtils.coordinatorOrNull;
 
 /** */
 public class IoTestDiscoveryCommand implements ComputeCommand<IoTestDiscoveryCommandArg, String> {
     /** {@inheritDoc} */
     @Override public String description() {
-        return "Runs IO latency test against all remote server nodes in cluster.";
+        return "Tests how custom messages traverse the TcpDiscoverySpi ring.";
     }
 
     /** {@inheritDoc} */
@@ -44,8 +44,11 @@ public class IoTestDiscoveryCommand implements ComputeCommand<IoTestDiscoveryCom
     }
 
     /** {@inheritDoc} */
-    @Override public @Nullable Collection<ClusterNode> nodes(Collection<ClusterNode> nodes, IoTestDiscoveryCommandArg arg) {
-        return Collections.singleton(U.oldest(nodes, null));
+    @Override public @Nullable Collection<ClusterNode> nodes(
+        Collection<ClusterNode> nodes,
+        IoTestDiscoveryCommandArg arg
+    ) {
+        return coordinatorOrNull(nodes);
     }
 
     /** {@inheritDoc} */

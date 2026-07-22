@@ -1,29 +1,46 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.ignite.internal.managers.discovery;
 
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.IgniteLogger;
 import org.apache.ignite.internal.GridKernalContext;
-import org.apache.ignite.internal.IgniteInternalFuture;
+import org.apache.ignite.internal.IgniteFutureTimeoutCheckedException;
 import org.apache.ignite.internal.util.future.GridFutureAdapter;
 import org.apache.ignite.internal.util.typedef.internal.A;
-import org.apache.ignite.internal.util.typedef.internal.LT;
 import org.apache.ignite.internal.util.typedef.internal.S;
 import org.apache.ignite.internal.util.typedef.internal.U;
+import org.apache.ignite.lang.IgniteUuid;
+import org.apache.ignite.spi.discovery.tcp.TcpDiscoverySpi;
 import org.jetbrains.annotations.Nullable;
 
+/** Runs a bounded latency test through the discovery ring. */
 public class IoTestDiscoveryHandler {
-    /** */
-    private final static AtomicLong ID_GEN = new AtomicLong();
+    /** Cancellation polling interval. */
+    private static final long CANCEL_POLL_INTERVAL_MILLIS = 100;
 
     /** */
     private final GridKernalContext ctx;
@@ -31,48 +48,105 @@ public class IoTestDiscoveryHandler {
     /** */
     private final IgniteLogger log;
 
-    /** */
-    private final ConcurrentHashMap<Long, IoTestDiscoveryFuture> ioTests = new ConcurrentHashMap<>();
+    /** Pending tests. */
+    private final ConcurrentHashMap<IgniteUuid, IoTestDiscoveryFuture> ioTests = new ConcurrentHashMap<>();
 
-    /** */
+    /** Ensures that only one test runs on the coordinator. */
+    private final AtomicBoolean testRunning = new AtomicBoolean();
+
+    /** @param ctx Kernal context. */
     public IoTestDiscoveryHandler(GridKernalContext ctx) {
         this.ctx = ctx;
         log = ctx.log(getClass());
 
-        ctx.discovery().setCustomEventListener(IoTestDiscoveryMessage.class, (topVer, snd, msg) -> {
-            msg.onProcessed(ctx.localNodeId());
-        });
+        ctx.discovery().setCustomEventListener(IoTestDiscoveryMessage.class, (topVer, snd, msg) ->
+            msg.onProcessed(ctx.localNodeId()));
 
         ctx.discovery().setCustomEventListener(IoTestDiscoveryAckMessage.class, (topVer, snd, msg) -> {
             if (!U.isLocalNodeCoordinator(ctx.discovery()))
                 return;
 
-            IoTestDiscoveryFuture fut = ioTests.get(msg.testId());
+            IoTestDiscoveryFuture fut = ioTests.get(msg.requestId());
 
-            if (fut == null)
-                LT.warn(log, "Failed to find IO test future [msg=" + msg + ']');
-            else
-                fut.onDone(msg);
+            if (fut != null)
+                fut.onAck(msg);
+            else if (log.isDebugEnabled())
+                log.debug("Ignoring unknown discovery IO test acknowledgement: " + msg.requestId());
         });
     }
 
     /**
-     * @param payload Payload.
-     * @return Response future.
+     * @param samples Number of samples.
+     * @param intervalMillis Interval between samples.
+     * @param payloadSize Payload size.
+     * @param cancelled Cancellation flag.
+     * @return Test report.
      */
-    public IgniteInternalFuture<IoTestDiscoveryAckMessage> sendIoDiscoveryTest(byte[] payload) {
-        A.ensure(ctx.discovery().mutableCustomMessages(), "DiscoverySpi should support mutable custom messages.");
-        A.ensure(U.isLocalNodeCoordinator(ctx.discovery()), "Should be executed on the coordinator node.");
-
-        long id = ID_GEN.getAndIncrement();
-
-        IoTestDiscoveryFuture fut = new IoTestDiscoveryFuture(id);
-
-        ioTests.put(id, fut);
+    public String runTest(int samples, long intervalMillis, int payloadSize, BooleanSupplier cancelled) {
+        A.ensure(ctx.discovery().getInjectedDiscoverySpi() instanceof TcpDiscoverySpi,
+            "Discovery IO test requires TcpDiscoverySpi.");
+        A.ensure(ctx.discovery().aliveServerNodes().size() > 1,
+            "Discovery IO test requires at least two server nodes.");
+        A.notNull(cancelled, "cancelled");
+        A.ensure(testRunning.compareAndSet(false, true), "Discovery IO test is already running.");
 
         try {
-            IoTestDiscoveryMessage msg = new IoTestDiscoveryMessage(id, payload);
+            byte[] payload = new byte[payloadSize];
+            long topVer = ctx.discovery().topologyVersion();
+            long timeout = ctx.config().getNetworkTimeout();
+            List<Long> ringTimes = new ArrayList<>(samples);
+            List<UUID> path = null;
 
+            for (int i = 0; i < samples; i++) {
+                ensureNotCancelled(cancelled);
+                ensureTopology(topVer);
+
+                IoTestDiscoveryFuture fut = send(payload);
+                IoTestDiscoveryResult res;
+
+                try {
+                    res = await(fut, timeout, cancelled);
+                }
+                catch (IgniteCheckedException e) {
+                    if (ctx.discovery().topologyVersion() != topVer)
+                        throw new IgniteException("Topology changed during discovery IO test.", e);
+
+                    throw new IgniteException("Discovery IO test sample timed out or failed.", e);
+                }
+                finally {
+                    ioTests.remove(fut.requestId, fut);
+                }
+
+                ensureTopology(topVer);
+
+                if (path == null)
+                    path = new ArrayList<>(res.ack.path);
+                else if (!path.equals(res.ack.path))
+                    throw new IgniteException("Discovery ring path changed during the test.");
+
+                ringTimes.add(res.ringTimeNanos);
+
+                if (i + 1 < samples)
+                    sleep(intervalMillis, cancelled);
+            }
+
+            return formatSummary(payloadSize, intervalMillis, ringTimes, path);
+        }
+        finally {
+            testRunning.set(false);
+        }
+    }
+
+    /** Sends one test message. */
+    private IoTestDiscoveryFuture send(byte[] payload) {
+        A.ensure(U.isLocalNodeCoordinator(ctx.discovery()), "Should be executed on the coordinator node.");
+
+        IoTestDiscoveryMessage msg = new IoTestDiscoveryMessage(payload);
+        IoTestDiscoveryFuture fut = new IoTestDiscoveryFuture(msg.id());
+
+        ioTests.put(msg.id(), fut);
+
+        try {
             ctx.discovery().sendCustomEvent(msg);
         }
         catch (IgniteCheckedException e) {
@@ -82,169 +156,125 @@ public class IoTestDiscoveryHandler {
         return fut;
     }
 
-    public String runTest(long warmup, long duration, byte[] payload) {
-        A.ensure(warmup >= 0, "warmup must be >= 0");
-        A.ensure(duration >= 0, "duration must be >= 0");
-
-        // Warmup.
-        long start = U.currentTimeMillis();
-
-        while (System.currentTimeMillis() - start < warmup) {
-            try {
-                sendIoDiscoveryTest(payload).get();
-            }
-            catch (Exception e) {
-                throw new IgniteException("Failed to run IO test.", e);
-            }
-        }
-
-        // Measure.
-        List<IoTestDiscoveryAckMessage> res = new ArrayList<>();
-
-        start = U.currentTimeMillis();
-
-        while ((U.currentTimeMillis() - start < duration) || res.isEmpty()) {
-            try {
-                IoTestDiscoveryAckMessage msg = sendIoDiscoveryTest(payload).get();
-
-                if (msg != null)
-                    res.add(msg);
-            }
-            catch (Exception e) {
-                throw new IgniteException("Failed to run IO test.", e);
-            }
-        }
-
-        return formatSummary(res);
+    /** Fails the test if topology changed. */
+    private void ensureTopology(long topVer) {
+        if (ctx.discovery().topologyVersion() != topVer)
+            throw new IgniteException("Topology changed during discovery IO test.");
     }
 
-    /** */
-    private String formatSummary(Collection<IoTestDiscoveryAckMessage> res) {
-        List<Long> ringTimes = new ArrayList<>();
-        Map<UUID, List<Long>> nodeQueues = new HashMap<>();
-        Map<UUID, List<Long>> hopLatencies = new HashMap<>();
+    /** Waits for one sample while observing job cancellation. */
+    private static IoTestDiscoveryResult await(
+        IoTestDiscoveryFuture fut,
+        long timeout,
+        BooleanSupplier cancelled
+    ) throws IgniteCheckedException {
+        long startNanos = System.nanoTime();
+        long remaining = Math.max(1, timeout);
 
-        for (IoTestDiscoveryAckMessage r : res) {
-            long ringTime = TimeUnit.NANOSECONDS.toMillis(r.ackCreateTs - r.reqCreateTs);
+        while (true) {
+            ensureNotCancelled(cancelled);
 
-            ringTimes.add(ringTime);
+            try {
+                IoTestDiscoveryResult res = fut.get(Math.min(remaining, CANCEL_POLL_INTERVAL_MILLIS));
 
-            var nodes = r.procTsMillis.keySet().toArray(new UUID[0]);
-            var proc = r.procTsMillis.values().toArray(new Long[0]);
+                ensureNotCancelled(cancelled);
 
-            List<Long> rcv = r.rcvTs;
-            List<Long> snd = r.sndTs;
-
-            int n = Math.min(Math.min(rcv.size(), snd.size()), nodes.length);
-
-            for (int i = 0; i < n; i++) {
-                long q = TimeUnit.NANOSECONDS.toMillis(snd.get(i) - rcv.get(i));
-
-                nodeQueues.computeIfAbsent(nodes[i], k -> new ArrayList<>()).add(q);
+                return res;
             }
+            catch (IgniteFutureTimeoutCheckedException e) {
+                ensureNotCancelled(cancelled);
 
-            for (int i = 1; i < proc.length; i++) {
-                long delta = proc[i] - proc[i - 1];
+                remaining = timeout - TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
 
-                hopLatencies.computeIfAbsent(nodes[i - 1], k -> new ArrayList<>()).add(delta);
-            }
-
-            // Final hop: last node -> coordinator.
-            if (proc.length > 0) {
-                UUID lastNode = nodes[nodes.length - 1];
-                long lastTs = proc[proc.length - 1];
-                long delta = r.ackCreateTsMillis - lastTs;
-
-                hopLatencies.computeIfAbsent(lastNode, k -> new ArrayList<>()).add(delta);
+                if (remaining <= 0)
+                    throw e;
             }
         }
+    }
 
+    /** Sleeps between samples while observing job cancellation. */
+    private static void sleep(long millis, BooleanSupplier cancelled) {
+        for (long remaining = millis; remaining > 0; ) {
+            ensureNotCancelled(cancelled);
+
+            long delay = Math.min(remaining, CANCEL_POLL_INTERVAL_MILLIS);
+
+            try {
+                U.sleep(delay);
+            }
+            catch (IgniteCheckedException e) {
+                throw new IgniteException("Discovery IO test was interrupted.", e);
+            }
+
+            remaining -= delay;
+        }
+    }
+
+    /** Fails the test if its management job was cancelled. */
+    private static void ensureNotCancelled(BooleanSupplier cancelled) {
+        if (cancelled.getAsBoolean())
+            throw new IgniteException("Discovery IO test was cancelled.");
+    }
+
+    /** Formats a compact report. */
+    private String formatSummary(int payloadSize, long intervalMillis, List<Long> ringTimes, List<UUID> path) {
         ringTimes.sort(Long::compare);
-
-        long avgRing = (long) ringTimes.stream().mapToLong(x -> x).average().orElse(0);
-        long maxRing = ringTimes.get(ringTimes.size() - 1);
-        long p95Ring = ringTimes.get(Math.max((int)(ringTimes.size() * 0.95) - 1, 0));
 
         StringBuilder sb = new StringBuilder();
 
-        sb.append("IO Discovery Summary\n");
-        sb.append("Runs: ").append(res.size()).append("\n");
+        sb.append("TcpDiscoverySpi ring test\n");
+        sb.append("Coordinator: ").append(ctx.localNodeId()).append('\n');
+        sb.append("Samples: ").append(ringTimes.size()).append(" | Interval: ").append(intervalMillis).append(" ms\n");
+        sb.append("Request payload: ").append(payloadSize).append(" bytes\n");
+        sb.append("Request path: ");
 
-        sb.append("Ring time (ms): avg=").append(avgRing)
-            .append(", p95=").append(p95Ring)
-            .append(", max=").append(maxRing).append("\n");
+        for (UUID nodeId : path)
+            sb.append(nodeId).append(" -> ");
 
-        sb.append("Node queue (ms):\n");
-
-        UUID worstNode = null;
-        long worstAvg = Long.MIN_VALUE;
-
-        for (var e : nodeQueues.entrySet()) {
-            List<Long> vals = e.getValue();
-
-            long avg = (long) vals.stream().mapToLong(x -> x).average().orElse(0);
-            long max = vals.stream().mapToLong(x -> x).max().orElse(0);
-
-            if (avg > worstAvg) {
-                worstAvg = avg;
-                worstNode = e.getKey();
-            }
-
-            sb.append("  ").append(e.getKey())
-                .append(": avg=").append(avg)
-                .append(", max=").append(max)
-                .append("\n");
-        }
-
-        if (worstNode != null) {
-            sb.append("Hotspot node: ").append(worstNode)
-                .append(" (avg queue ").append(worstAvg).append(" ms)\n");
-        }
-
-        sb.append("Hop latency (ms):\n");
-
-        UUID worstHop = null;
-        long worstHopAvg = Long.MIN_VALUE;
-
-        for (var e : hopLatencies.entrySet()) {
-            List<Long> vals = e.getValue();
-
-            long avg = (long) vals.stream().mapToLong(x -> x).average().orElse(0);
-            long max = vals.stream().mapToLong(x -> x).max().orElse(0);
-
-            if (avg > worstHopAvg) {
-                worstHopAvg = avg;
-                worstHop = e.getKey();
-            }
-
-            sb.append("  ").append(e.getKey())
-                .append(": avg=").append(avg)
-                .append(", max=").append(max)
-                .append("\n");
-        }
-
-        if (worstHop != null) {
-            sb.append("Slowest hop: ").append(worstHop)
-                .append(" (avg ").append(worstHopAvg).append(" ms)\n");
-        }
+        sb.append(ctx.localNodeId()).append('\n');
+        sb.append("Ring traversal (us): min=").append(toMicros(ringTimes.get(0)))
+            .append(", p50=").append(toMicros(percentile(ringTimes, 50)))
+            .append(", p95=").append(toMicros(percentile(ringTimes, 95)))
+            .append(", max=").append(toMicros(ringTimes.get(ringTimes.size() - 1)))
+            .append('\n');
 
         return sb.toString();
     }
 
-    /** */
-    private class IoTestDiscoveryFuture extends GridFutureAdapter<IoTestDiscoveryAckMessage> {
-        /** */
-        private final long id;
+    /** Returns the nearest-rank percentile. */
+    private static long percentile(List<Long> sorted, int percentile) {
+        int idx = (int)Math.ceil(sorted.size() * percentile / 100.0) - 1;
 
-        /** @param id Test ID. */
-        IoTestDiscoveryFuture(long id) {
-            this.id = id;
+        return sorted.get(idx);
+    }
+
+    /** Converts nanoseconds to microseconds. */
+    private static long toMicros(long nanos) {
+        return TimeUnit.NANOSECONDS.toMicros(nanos);
+    }
+
+    /** Pending discovery test. */
+    private class IoTestDiscoveryFuture extends GridFutureAdapter<IoTestDiscoveryResult> {
+        /** Request ID. */
+        private final IgniteUuid requestId;
+
+        /** Local start timestamp. */
+        private final long startNanos = System.nanoTime();
+
+        /** @param requestId Request ID. */
+        IoTestDiscoveryFuture(IgniteUuid requestId) {
+            this.requestId = requestId;
+        }
+
+        /** Completes this future with an acknowledgement. */
+        void onAck(IoTestDiscoveryAckMessage ack) {
+            onDone(new IoTestDiscoveryResult(ack, System.nanoTime() - startNanos));
         }
 
         /** {@inheritDoc} */
-        @Override public boolean onDone(IoTestDiscoveryAckMessage res, @Nullable Throwable err) {
+        @Override public boolean onDone(IoTestDiscoveryResult res, @Nullable Throwable err) {
             if (super.onDone(res, err)) {
-                ioTests.remove(id);
+                ioTests.remove(requestId, this);
 
                 return true;
             }
@@ -255,6 +285,21 @@ public class IoTestDiscoveryHandler {
         /** {@inheritDoc} */
         @Override public String toString() {
             return S.toString(IoTestDiscoveryFuture.class, this);
+        }
+    }
+
+    /** Result of one ring traversal. */
+    private static class IoTestDiscoveryResult {
+        /** Acknowledgement. */
+        private final IoTestDiscoveryAckMessage ack;
+
+        /** Ring traversal time. */
+        private final long ringTimeNanos;
+
+        /** */
+        IoTestDiscoveryResult(IoTestDiscoveryAckMessage ack, long ringTimeNanos) {
+            this.ack = ack;
+            this.ringTimeNanos = ringTimeNanos;
         }
     }
 }

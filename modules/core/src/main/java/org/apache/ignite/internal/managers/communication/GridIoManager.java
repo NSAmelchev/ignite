@@ -688,6 +688,9 @@ public class GridIoManager extends GridManagerAdapter<CommunicationSpi<Object>> 
     /** {@inheritDoc} */
     @SuppressWarnings("BusyWait")
     @Override public void onKernalStop0(boolean cancel) {
+        if (ioTestHnd != null)
+            ioTestHnd.stop();
+
         // No more communication messages.
         getSpi().setListener(null);
 

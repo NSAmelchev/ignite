@@ -23,116 +23,71 @@ import org.apache.ignite.internal.Order;
 import org.apache.ignite.internal.util.typedef.internal.S;
 import org.apache.ignite.marshaller.Marshaller;
 
-/**
- * IO test message flow:
- * <p>
- *     <b>Send request</b>
- * </p>
- * <p>{@link #reqCreateTs} Request create timestamp (JVM time).
- * <p>
- *     (queue time)
- * </p>
- * <p>{@link #reqSndTs} Request send timestamp (JVM time).
- * <p>{@link #reqSndTsMillis} Request send timestamp (System time).
- * <p>
- *     (network latency, sending to remote node)
- * <p>
- * <p>{@link #reqRcvTsMillis} Request received timestamp (System time).
- * <p>{@link #reqRcvTs} Request receive timestamp (JVM time).
- * <p>
- *     (remote node system pool queue time)
- * </p>
- * <p>
- *     <b>Send response</b>
- * </p>
- * <p>{@link #reqProcTs} Request process started timestamp (JVM time).
- * <p>
- *     (queue time)
- * </p>
- * <p>{@link #resSndTs} Response send timestamp (JVM time).
- * <p>{@link #resSndTsMillis} Response send timestamp (System time).
- * <p>
- *     (network latency, sending back)
- * <p>
- * <p>{@link #resRcvTsMillis} Response received timestamp (System time).
- * <p>{@link #resRcvTs} Response receive timestamp (JVM time).
- * <p>
- *     (queue time)
- * </p>
- * <p>{@link #resProcTs} Response processed timestamp (JVM time).
- */
+/** Communication SPI test message. */
 public class IgniteIoTestMessage implements MarshallableMessage {
-    /** */
+    /** Test ID. */
     @Order(0)
     long id;
 
-    /** */
+    /** Process message in NIO thread. */
     @Order(1)
     boolean procFromNioThread;
 
-    /** */
+    /** Request flag. */
     @Order(2)
     boolean req;
 
-    /** */
+    /** Payload. */
     @Order(3)
     byte[] payload;
 
-    /** */
+    /** Request creation timestamp local to the sender. */
     @Order(4)
     long reqCreateTs;
 
-    /** */
+    /** Request serialization timestamp local to the sender. */
     @Order(5)
     long reqSndTs;
 
-    /** */
+    /** Request serialization wall-clock timestamp. */
     @Order(6)
     long reqSndTsMillis;
 
-    /** */
+    /** Request deserialization timestamp local to the receiver. */
     @Order(7)
     long reqRcvTs;
 
-    /** */
+    /** Request deserialization wall-clock timestamp. */
     @Order(8)
     long reqRcvTsMillis;
 
-    /** */
+    /** Request listener invocation timestamp local to the receiver. */
     @Order(9)
     long reqProcTs;
 
-    /** */
+    /** Response serialization timestamp local to the sender. */
     @Order(10)
     long resSndTs;
 
-    /** */
+    /** Response serialization wall-clock timestamp. */
     @Order(11)
     long resSndTsMillis;
 
-    /** */
-    @Order(12)
+    /** Response deserialization timestamp local to the request sender. */
     long resRcvTs;
 
-    /** */
-    @Order(13)
+    /** Response deserialization wall-clock timestamp. */
     long resRcvTsMillis;
 
-    /** */
-    @Order(14)
+    /** Response listener invocation timestamp local to the request sender. */
     long resProcTs;
 
-    /** */
+    /** Required by the message factory. */
     public IgniteIoTestMessage() {
         // No-op.
     }
 
-    /**
-     * Request constructor.
-     *
-     * @param id Test ID.
-     * @param payload Payload.
-     */
+    /** Request constructor. */
     public IgniteIoTestMessage(long id, byte[] payload, boolean procFromNioThread) {
         this.id = id;
         this.payload = payload;
@@ -145,25 +100,22 @@ public class IgniteIoTestMessage implements MarshallableMessage {
     /** Response constructor. */
     public IgniteIoTestMessage(IgniteIoTestMessage req) {
         id = req.id;
-
+        payload = req.payload;
+        procFromNioThread = req.procFromNioThread;
         reqCreateTs = req.reqCreateTs;
-
         reqSndTs = req.reqSndTs;
         reqSndTsMillis = req.reqSndTsMillis;
-
         reqRcvTs = req.reqRcvTs;
         reqRcvTsMillis = req.reqRcvTsMillis;
+        reqProcTs = req.reqProcTs;
     }
 
-    /**
-     * @return {@code True} if message should be processed from NIO thread
-     * (otherwise message is submitted to system pool).
-     */
+    /** @return {@code True} to process this message in NIO thread. */
     public boolean processFromNioThread() {
         return procFromNioThread;
     }
 
-    /** @return {@code true} if this is request. */
+    /** @return {@code True} if this is a request. */
     public boolean request() {
         return req;
     }
@@ -173,105 +125,73 @@ public class IgniteIoTestMessage implements MarshallableMessage {
         return id;
     }
 
-    /** @return Request create timestamp. */
-    public long requestCreateTs() {
-        return reqCreateTs;
+    /** Records request listener invocation. */
+    void onRequestProcessed() {
+        reqProcTs = System.nanoTime();
     }
 
-    /** @return Request send timestamp. */
-    public long requestSendTs() {
-        return reqSndTs;
+    /** Records response listener invocation. */
+    void onResponseProcessed() {
+        resProcTs = System.nanoTime();
     }
 
-    /** @return Request receive timestamp. */
-    public long requestReceiveTs() {
-        return reqRcvTs;
+    /** @return Round-trip time in nanoseconds. */
+    long roundTripNanos() {
+        return resProcTs - reqCreateTs;
     }
 
-    /** @return Request process started timestamp. */
-    public long requestProcessTs() {
-        return reqProcTs;
+    /** @return Time spent before request serialization, in nanoseconds. */
+    long requestSendQueueNanos() {
+        return reqSndTs - reqCreateTs;
     }
 
-    /** @return Response send timestamp. */
-    public long responseSendTs() {
-        return resSndTs;
+    /** @return Time between request deserialization and listener invocation, in nanoseconds. */
+    long requestReceiveQueueNanos() {
+        return reqProcTs - reqRcvTs;
     }
 
-    /** Response send timestamp (millis) */
-    public long responseSendTsMillis() {
-        return resSndTsMillis;
+    /** @return Time spent before response serialization, in nanoseconds. */
+    long responseSendQueueNanos() {
+        return resSndTs - reqProcTs;
     }
 
-    /** @return Response receive timestamp. */
-    public long responseReceiveTs() {
-        return resRcvTs;
+    /** @return Time between response deserialization and listener invocation, in nanoseconds. */
+    long responseReceiveQueueNanos() {
+        return resProcTs - resRcvTs;
     }
 
-    /** @return Request send timestamp (millis). */
-    public long requestSendTsMillis() {
-        return reqSndTsMillis;
+    /** @return Approximate request transport time in milliseconds. */
+    long requestWireTimeMillis() {
+        return reqRcvTsMillis - reqSndTsMillis;
     }
 
-    /** @return Request received timestamp (millis). */
-    public long requestReceivedTsMillis() {
-        return reqRcvTsMillis;
+    /** @return Approximate response transport time in milliseconds. */
+    long responseWireTimeMillis() {
+        return resRcvTsMillis - resSndTsMillis;
     }
 
-    /** @return Response received timestamp (millis). */
-    public long responseReceivedTsMillis() {
-        return resRcvTsMillis;
-    }
-
-    /**
-     * This method is called to initialize tracing variables.
-     * TODO: introduce direct message lifecycle API?
-     */
-    public void onAfterRead() {
-        if (req && reqRcvTs == 0) {
-            reqRcvTs = System.nanoTime();
-
-            reqRcvTsMillis = System.currentTimeMillis();
-        }
-
-        if (!req && resRcvTs == 0) {
-            resRcvTs = System.nanoTime();
-
-            resRcvTsMillis = System.currentTimeMillis();
-        }
-    }
-
-    /**
-     * This method is called to initialize tracing variables.
-     * TODO: introduce direct message lifecycle API?
-     */
-    public void onBeforeWrite() {
+    /** Records the first serialization attempt. */
+    void onBeforeWrite() {
         if (req && reqSndTs == 0) {
             reqSndTs = System.nanoTime();
-
             reqSndTsMillis = System.currentTimeMillis();
         }
-
-        if (!req && resSndTs == 0) {
+        else if (!req && resSndTs == 0) {
             resSndTs = System.nanoTime();
-
             resSndTsMillis = System.currentTimeMillis();
         }
     }
 
-    /** */
-    public void onRequestProcessed() {
-        reqProcTs = System.nanoTime();
-    }
-
-    /** */
-    public void onResponseProcessed() {
-        resProcTs = System.nanoTime();
-    }
-
-    /** @return Response processed timestamp. */
-    public long responseProcessedTs() {
-        return resProcTs;
+    /** Records completed deserialization. */
+    void onAfterRead() {
+        if (req && reqRcvTs == 0) {
+            reqRcvTs = System.nanoTime();
+            reqRcvTsMillis = System.currentTimeMillis();
+        }
+        else if (!req && resRcvTs == 0) {
+            resRcvTs = System.nanoTime();
+            resRcvTsMillis = System.currentTimeMillis();
+        }
     }
 
     /** {@inheritDoc} */

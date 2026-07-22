@@ -261,8 +261,8 @@ public class OperationContextSendAttributesTest extends GridCommonAbstractTest {
         to.context().io().addMessageListener(GridTopic.TOPIC_IO_TEST, lsnr);
 
         try {
-            from.context().io().sendIoTest(node(from, to), null, false);
-            from.context().io().sendIoTest(node(from, to), null, true);
+            from.context().io().ioTest().sendIoTest(node(from, to), null, false);
+            from.context().io().ioTest().sendIoTest(node(from, to), null, true);
 
             assertTrue(rcvLatch.await(getTestTimeout(), MILLISECONDS));
         }

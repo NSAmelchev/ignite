@@ -22,50 +22,63 @@ import java.util.concurrent.TimeUnit;
 import org.apache.ignite.internal.Order;
 import org.apache.ignite.internal.dto.IgniteDataTransferObject;
 import org.apache.ignite.internal.management.api.Argument;
+import org.apache.ignite.internal.util.typedef.internal.A;
 
 /** */
 public class IoTestCommunicationCommandArg extends IgniteDataTransferObject {
     /** */
     private static final long serialVersionUID = 0;
 
+    /** Maximum number of test threads. */
+    private static final int MAX_THREADS = 64;
+
+    /** Maximum number of histogram ranges. */
+    private static final int MAX_RANGES_COUNT = 1_000;
+
+    /** Maximum payload size. */
+    private static final int MAX_PAYLOAD_SIZE = 1024 * 1024;
+
+    /** Maximum warmup or test duration. */
+    private static final long MAX_PHASE_DURATION = TimeUnit.HOURS.toMillis(1);
+
     /** */
     @Order(0)
-    @Argument(description = "Node ID to run test from.")
+    @Argument(description = "Source node ID.")
     UUID nodeId;
 
     /** */
     @Order(1)
-    @Argument(optional = true, description = "Warmup duration (millis).")
+    @Argument(optional = true, description = "Warmup duration (millis, max 1 hour).")
     long warmup = TimeUnit.SECONDS.toMillis(15);
 
     /** */
     @Order(2)
-    @Argument(optional = true, description = "Test duration (millis).")
+    @Argument(optional = true, description = "Test duration (millis, max 1 hour).")
     long duration = TimeUnit.SECONDS.toMillis(30);
 
     /** */
     @Order(3)
-    @Argument(optional = true, description = "Threads count.")
+    @Argument(optional = true, description = "Number of test threads (max 64).")
     int threads = 4;
 
     /** */
     @Order(4)
-    @Argument(optional = true, description = "Maximum latency expected (nanos).")
+    @Argument(optional = true, description = "Histogram upper bound (nanos).")
     long maxLatency = TimeUnit.MILLISECONDS.toNanos(100);
 
     /** */
     @Order(5)
-    @Argument(optional = true, description = "Ranges count for histogram.")
+    @Argument(optional = true, description = "Ranges count for histogram (max 1000).")
     int rangesCnt = 5;
 
     /** */
     @Order(6)
-    @Argument(optional = true, description = "Payload size (bytes).")
-    int payLoadSize = 100;
+    @Argument(optional = true, description = "Payload size in each direction (bytes, max 1 MiB).")
+    int payloadSize = 100;
 
     /** */
     @Order(7)
-    @Argument(optional = true, description = "Process requests in NIO-threads flag.")
+    @Argument(optional = true, description = "Process requests and responses in NIO threads.")
     boolean procFromNioThread;
 
     /** */
@@ -85,6 +98,9 @@ public class IoTestCommunicationCommandArg extends IgniteDataTransferObject {
 
     /** */
     public void warmup(long warmup) {
+        A.ensure(warmup >= 0 && warmup <= MAX_PHASE_DURATION,
+            "warmup must be between 0 and " + MAX_PHASE_DURATION);
+
         this.warmup = warmup;
     }
 
@@ -95,6 +111,9 @@ public class IoTestCommunicationCommandArg extends IgniteDataTransferObject {
 
     /** */
     public void duration(long duration) {
+        A.ensure(duration > 0 && duration <= MAX_PHASE_DURATION,
+            "duration must be between 1 and " + MAX_PHASE_DURATION);
+
         this.duration = duration;
     }
 
@@ -105,6 +124,9 @@ public class IoTestCommunicationCommandArg extends IgniteDataTransferObject {
 
     /** */
     public void threads(int threads) {
+        A.ensure(threads > 0 && threads <= MAX_THREADS,
+            "threads must be between 1 and " + MAX_THREADS);
+
         this.threads = threads;
     }
 
@@ -115,6 +137,8 @@ public class IoTestCommunicationCommandArg extends IgniteDataTransferObject {
 
     /** */
     public void maxLatency(long maxLatency) {
+        A.ensure(maxLatency > 0, "maxLatency must be > 0");
+
         this.maxLatency = maxLatency;
     }
 
@@ -125,17 +149,23 @@ public class IoTestCommunicationCommandArg extends IgniteDataTransferObject {
 
     /** */
     public void rangesCnt(int rangesCnt) {
+        A.ensure(rangesCnt > 0 && rangesCnt <= MAX_RANGES_COUNT,
+            "rangesCnt must be between 1 and " + MAX_RANGES_COUNT);
+
         this.rangesCnt = rangesCnt;
     }
 
     /** */
-    public int payLoadSize() {
-        return payLoadSize;
+    public int payloadSize() {
+        return payloadSize;
     }
 
     /** */
-    public void payLoadSize(int payLoadSize) {
-        this.payLoadSize = payLoadSize;
+    public void payloadSize(int payloadSize) {
+        A.ensure(payloadSize >= 0 && payloadSize <= MAX_PAYLOAD_SIZE,
+            "payloadSize must be between 0 and " + MAX_PAYLOAD_SIZE);
+
+        this.payloadSize = payloadSize;
     }
 
     /** */

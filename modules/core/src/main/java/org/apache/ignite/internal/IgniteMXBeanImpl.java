@@ -299,6 +299,7 @@ public class IgniteMXBeanImpl implements IgniteMXBean {
     }
 
     /** {@inheritDoc} */
+    @Deprecated
     @Override public void runIoTest(
         long warmup,
         long duration,
@@ -323,11 +324,13 @@ public class IgniteMXBeanImpl implements IgniteMXBean {
             IgniteLogger log = ctx.log(ctx.io().getClass());
 
             try {
-                if (log.isDebugEnabled())
-                    log.info(f.get());
+                String res = f.get();
+
+                if (log.isInfoEnabled())
+                    log.info(res);
             }
             catch (IgniteCheckedException e) {
-                throw new RuntimeException(e);
+                U.error(log, "IO test failed.", e);
             }
         });
     }

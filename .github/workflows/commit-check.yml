@@ -57,6 +57,25 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2-
 
+      # DEBUG: после восстановления кеша
+      - name: Debug cache after restore
+        if: always()
+        run: |
+          echo "::group::Maven repository restored from cache"
+          cd ~/.m2/repository
+          echo "--- total: $(du -sh . | cut -f1), jars: $(find . -name '*.jar' | wc -l), artifact versions: $(find . -mindepth 3 -maxdepth 3 -type d | wc -l)"
+          if [ -d org/apache/ignite ]; then
+            echo "--- org/apache/ignite: $(du -sh org/apache/ignite | cut -f1)"
+            find org/apache/ignite -mindepth 2 -maxdepth 2 -type d -exec du -sh {} + | sort -h
+            echo "--- snapshots: $(find org/apache/ignite -maxdepth 2 -name '*-SNAPSHOT' -type d | wc -l)"
+            [ -d org/apache/ignite/ignite-core/2.19.0-SNAPSHOT ] && ls -la org/apache/ignite/ignite-core/2.19.0-SNAPSHOT || true
+          else
+            echo "--- no org/apache/ignite"
+          fi
+          echo "--- biggest groups:"
+          du -sh */* 2>/dev/null | sort -h | tail -15
+          echo "::endgroup::"
+
       - name: Install prerequisites
         run: |
           sudo apt-get update && sudo apt-get install libnuma-dev
@@ -143,9 +162,48 @@ jobs:
         run: |
           ./mvnw test-compile -Pdocs -pl :code-snippets -am -B -V
 
+      # DEBUG: перед удалением
+      - name: Debug cache before drop
+        if: always()
+        run: |
+          echo "::group::Maven repository before dropping Ignite snapshots"
+          cd ~/.m2/repository
+          echo "--- total: $(du -sh . | cut -f1), jars: $(find . -name '*.jar' | wc -l), artifact versions: $(find . -mindepth 3 -maxdepth 3 -type d | wc -l)"
+          if [ -d org/apache/ignite ]; then
+            echo "--- org/apache/ignite: $(du -sh org/apache/ignite | cut -f1)"
+            find org/apache/ignite -mindepth 2 -maxdepth 2 -type d -exec du -sh {} + | sort -h
+            echo "--- snapshots: $(find org/apache/ignite -maxdepth 2 -name '*-SNAPSHOT' -type d | wc -l)"
+            [ -d org/apache/ignite/ignite-core/2.19.0-SNAPSHOT ] && ls -la org/apache/ignite/ignite-core/2.19.0-SNAPSHOT || true
+          else
+            echo "--- no org/apache/ignite"
+          fi
+          echo "--- biggest groups:"
+          du -sh */* 2>/dev/null | sort -h | tail -15
+          echo "::endgroup::"
+
       - name: Drop Ignite snapshots before caching the Maven repository
         # Keep only third-party artifacts in the cache: Ignite modules are built by every run anyway.
+        if: always()
         run: rm -rf ~/.m2/repository/org/apache/ignite/*/*-SNAPSHOT
+
+      # DEBUG: после удаления, то, что уйдёт в кеш
+      - name: Debug cache after drop
+        if: always()
+        run: |
+          echo "::group::Maven repository as it will be cached"
+          cd ~/.m2/repository
+          echo "--- total: $(du -sh . | cut -f1), jars: $(find . -name '*.jar' | wc -l), artifact versions: $(find . -mindepth 3 -maxdepth 3 -type d | wc -l)"
+          if [ -d org/apache/ignite ]; then
+            echo "--- org/apache/ignite: $(du -sh org/apache/ignite | cut -f1)"
+            find org/apache/ignite -mindepth 2 -maxdepth 2 -type d -exec du -sh {} + | sort -h
+            echo "--- snapshots: $(find org/apache/ignite -maxdepth 2 -name '*-SNAPSHOT' -type d | wc -l)"
+            [ -d org/apache/ignite/ignite-core/2.19.0-SNAPSHOT ] && ls -la org/apache/ignite/ignite-core/2.19.0-SNAPSHOT || true
+          else
+            echo "--- no org/apache/ignite"
+          fi
+          echo "--- biggest groups:"
+          du -sh */* 2>/dev/null | sort -h | tail -15
+          echo "::endgroup::"
 
   check-dotnet:
     name: Сheck .NET code

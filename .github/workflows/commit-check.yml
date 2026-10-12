@@ -53,9 +53,7 @@ jobs:
       - name: Cache Maven packages
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.m2/repository
-            !~/.m2/repository/org/apache/ignite/*/*-SNAPSHOT
+          path: ~/.m2/repository
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2-
 
@@ -144,6 +142,10 @@ jobs:
       - name: Documentation code snippets compilation check
         run: |
           ./mvnw test-compile -Pdocs -pl :code-snippets -am -B -V
+
+      - name: Drop Ignite snapshots before caching the Maven repository
+        # Keep only third-party artifacts in the cache: Ignite modules are built by every run anyway.
+        run: rm -rf ~/.m2/repository/org/apache/ignite/*/*-SNAPSHOT
 
   check-dotnet:
     name: Сheck .NET code

@@ -101,7 +101,7 @@ public class CommandHandler {
     /** */
     public static final String CONFIRM_MSG = "y";
 
-    /** */
+    /** Exit code OK. */
     public static final int EXIT_CODE_OK = 0;
 
     /** */
